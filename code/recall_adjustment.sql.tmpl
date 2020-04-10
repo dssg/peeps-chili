@@ -1,0 +1,395 @@
+{% set results_sql %}
+, group_recalls AS (
+  SELECT gn.method, CASE WHEN gn.method LIKE 'composite%%' THEN NULL ELSE rr.model_id END AS model_id,
+         gn.past_train_end_time, rr.train_end_time, gn.list_size, rr.demo_value,
+         MAX(rr.model_group_id) AS model_group_id_demo, -- max over identical values
+         1.0000*COUNT(*)/gn.list_size AS frac_demo,
+         MAX(rr.recall_demo_rolling) AS group_recall
+  FROM tmp_bias_rolling_recall rr
+  JOIN group_nums gn
+    ON gn.model_group_id = rr.model_group_id
+    AND gn.future_train_end_time = rr.train_end_time
+    AND gn.demo_value = rr.demo_value
+    AND rr.num_demo_rolling <= gn.group_k
+  GROUP BY 1,2,3,4,5,6
+)
+, censored_group_recalls AS (
+  -- limit recall values to a small non-zero value to avoid divide by zero errors calculating ratios
+  -- this seems somewhat more principled to me than coercing these cases to NULL since doing so could
+  -- lead to their being excluded from downstream analyses.
+  SELECT method, model_id, past_train_end_time, train_end_time, list_size, demo_value, model_group_id_demo, frac_demo, 
+         CASE WHEN group_recall = 0 THEN 0.00001 ELSE group_recall END AS group_recall
+  FROM group_recalls
+)
+, recall_ratio AS (
+  SELECT gr1.model_id, gr1.train_end_time, gr1.past_train_end_time, gr1.list_size,
+         MAX(1.000000*gr1.group_recall/gr2.group_recall) AS max_recall_ratio
+         -- will give the full set of permutations (A/B and B/A), letting user decide on display...
+         {% for demo1, demo2 in demo_permutations %}
+         , MAX(CASE WHEN gr1.demo_value='{{demo1}}' AND gr2.demo_value='{{demo2}}' THEN 1.000000*gr1.group_recall/gr2.group_recall ELSE NULL END) AS recall_{{demo1}}_to_{{demo2}}
+         {% endfor %}
+         -- frac_demo and raw recall aggregates taken over identical values
+         {% for demo in demo_values %}
+         , MAX(CASE WHEN gr1.demo_value='{{demo}}' THEN gr1.frac_demo ELSE NULL END) AS frac_{{demo}}
+         , MAX(CASE WHEN gr1.demo_value='{{demo}}' THEN gr1.group_recall ELSE NULL END) AS recall_{{demo}}
+         , MAX(CASE WHEN gr1.demo_value='{{demo}}' THEN gr1.model_group_id_demo ELSE NULL END) AS model_group_id_{{demo}}
+         {% endfor %}
+  FROM censored_group_recalls gr1
+  JOIN censored_group_recalls gr2 
+    ON COALESCE(gr1.model_id, -1) = COALESCE(gr2.model_id, -1)
+    AND gr1.train_end_time = gr2.train_end_time
+    AND gr1.past_train_end_time = gr2.past_train_end_time
+    AND gr1.list_size = gr2.list_size
+    AND gr1.demo_value <> gr2.demo_value
+  GROUP BY 1,2,3,4
+)
+, perf AS (
+  SELECT gn.method, CASE WHEN gn.method LIKE 'composite%%' THEN NULL ELSE rr.model_id END AS model_id, 
+         gn.past_train_end_time, rr.train_end_time, gn.list_size,
+         COUNT(*) AS num_selected,
+         'precision@'::VARCHAR(256) AS metric,
+         gn.list_size::VARCHAR||'_abs'::VARCHAR(256) AS parameter,
+         AVG(label_value) AS value
+  FROM tmp_bias_rolling_recall rr
+  JOIN group_nums gn 
+    ON rr.model_group_id = gn.model_group_id 
+    AND rr.train_end_time = gn.future_train_end_time
+    AND rr.demo_value = gn.demo_value 
+    AND rr.num_demo_rolling <= gn.group_k
+  GROUP BY 1,2,3,4,5,7,8
+)
+SELECT perf.*, rat.max_recall_ratio
+         {% for demo1, demo2 in demo_permutations %}
+       , rat.recall_{{demo1}}_to_{{demo2}}
+         {% endfor %}
+         {% for demo in demo_values %}
+       , rat.frac_{{demo}}
+       , rat.recall_{{demo}}
+       , rat.model_group_id_{{demo}}
+         {% endfor %}
+FROM perf
+JOIN recall_ratio rat 
+  ON COALESCE(perf.model_id, -1) = COALESCE(rat.model_id, -1)
+  AND perf.train_end_time = rat.train_end_time
+  AND perf.past_train_end_time = rat.past_train_end_time
+  AND perf.list_size = rat.list_size
+{% endset %}
+
+
+{% if subsample %}
+DROP TABLE IF EXISTS tmp_bias_sample;
+CREATE LOCAL TEMPORARY TABLE tmp_bias_sample
+  ON COMMIT PRESERVE ROWS
+AS
+WITH rands AS (
+  SELECT entity_id, as_of_date, {{demo_col}}, RANDOM() AS sample_rand
+  FROM {{entity_demos}}
+)
+SELECT entity_id, as_of_date
+FROM rands
+WHERE FALSE
+  {% for demo, weight in sample_weights.items() %}
+  OR ({{demo_col}} = '{{demo}}' AND sample_rand <= {{weight}})
+  {% endfor %}
+;
+ALTER TABLE tmp_bias_sample ADD PRIMARY KEY(entity_id, as_of_date);
+{% endif %}
+
+
+-- Rolling Recall: sorted subgroups with subgroup recall up to that individual
+DROP TABLE IF EXISTS tmp_bias_rolling_recall CASCADE;
+CREATE LOCAL TEMPORARY TABLE tmp_bias_rolling_recall
+  ON COMMIT PRESERVE ROWS
+AS
+WITH preds AS (
+  SELECT mods.train_end_time, mods.model_group_id, p.model_id, p.entity_id, p.as_of_date, p.score, p.label_value,
+         row_number() OVER (PARTITION BY p.model_id ORDER BY p.score DESC, RANDOM()) AS model_rank
+  FROM test_results.predictions p
+  JOIN tmp_bias_models mods USING(model_id)
+  {% if subsample or bootstrap %}
+  -- only retain entities in the subsample/bootstrap, if using
+  JOIN tmp_bias_sample USING(entity_id, as_of_date)
+  {% endif %}
+)
+, demo AS (
+  SELECT p.entity_id, p.train_end_time, p.model_group_id, p.model_id, p.score, p.label_value, p.model_rank,
+         '{{demo_col}}'::VARCHAR(256) AS demo_col, {{demo_col}} AS demo_value
+  FROM {{entity_demos}} d
+  JOIN preds p USING(entity_id, as_of_date)
+)
+, demo_rn AS (
+  SELECT *, ROW_NUMBER() OVER (PARTITION BY model_id, demo_value ORDER BY model_rank ASC, RANDOM()) AS rn_demo
+  FROM demo
+)
+, rolling_recall AS (
+  SELECT *,
+         COUNT(*) OVER w_roll AS num_demo_rolling,
+         SUM(label_value) OVER w_roll AS tp_demo_rolling,
+         1.0000*(SUM(label_value) OVER w_roll)/(SUM(label_value) OVER w_all) AS recall_demo_rolling
+  FROM demo_rn
+  WINDOW w_roll AS (PARTITION BY model_id, demo_value ORDER BY rn_demo ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW),
+         w_all AS (PARTITION BY model_id, demo_value)
+)
+SELECT *, 
+        1.0000*tp_demo_rolling/num_demo_rolling AS precision_demo_rolling,
+        -- TODO: model_rank as tie breaker respects ordering of the scores, but may favor groups with higher
+        --       precision if there are many ties to break across multiple groups.
+        ROW_NUMBER() OVER (PARTITION BY model_id ORDER BY recall_demo_rolling ASC, model_rank ASC) AS rn_recall,
+        ROW_NUMBER() OVER (PARTITION BY train_end_time, demo_col, demo_value, rn_demo ORDER BY 1.0000*tp_demo_rolling/num_demo_rolling DESC, RANDOM()) AS rn_mg_perf
+FROM rolling_recall
+ORDER BY model_group_id, model_id, rn_demo
+;
+CREATE INDEX ON tmp_bias_rolling_recall(train_end_time, model_group_id, demo_value, num_demo_rolling);
+CREATE INDEX ON tmp_bias_rolling_recall(train_end_time, model_group_id, rn_recall);
+CREATE INDEX ON tmp_bias_rolling_recall(train_end_time, demo_value, rn_mg_perf);
+
+
+
+-- Model performance overall with no adjustments for disparities
+DROP TABLE IF EXISTS tmp_bias_mod_overall;
+CREATE LOCAL TEMPORARY TABLE tmp_bias_mod_overall
+  ON COMMIT PRESERVE ROWS
+AS
+WITH group_nums AS (
+    -- For base values (what we'd get just taking the top 500 w/o recall adjustments) we simply look
+    -- at the group numbers implied for each `future_train_end_time` at the overall list size
+    SELECT 'base'::VARCHAR(256) AS method, rr.model_group_id, et.past_train_end_time, et.future_train_end_time, 
+           list_size, rr.demo_value, COUNT(*) AS group_k
+    FROM tmp_bias_rolling_recall rr
+    JOIN tmp_bias_end_times et ON rr.train_end_time = et.future_train_end_time
+    CROSS JOIN tmp_bias_list_sizes
+    WHERE model_rank <= list_size
+    GROUP BY 1,2,3,4,5,6
+)
+{{ results_sql }}
+;
+CREATE INDEX ON tmp_bias_mod_overall(model_id, list_size, metric, parameter);
+
+
+-- Models Performance After Adjustment
+-- Subgroup list sizes are determined based on the past train_end_time then applied forward
+-- to the corresponding future train_end_time for performance evaluation on novel data
+DROP TABLE IF EXISTS tmp_bias_mod_adjusted;
+CREATE LOCAL TEMPORARY TABLE tmp_bias_mod_adjusted
+  ON COMMIT PRESERVE ROWS
+AS
+WITH group_nums AS (
+    -- We don't know the outcomes for the predict forward model, so we select the same number of individuals
+    -- that balanced recall by group in the model for the previous time split. Note that this makes the
+    -- important assumption that relative precision across groups is reasonably stable over time, which should
+    -- be validated in an ongoing manner.
+    SELECT 'adjusted'::VARCHAR(256) AS method, rr.model_group_id, et.past_train_end_time, et.future_train_end_time, 
+           list_size, rr.demo_value, COUNT(*) AS group_k
+    FROM tmp_bias_rolling_recall rr
+    JOIN tmp_bias_end_times et ON rr.train_end_time = et.past_train_end_time
+    CROSS JOIN tmp_bias_list_sizes
+    WHERE rn_recall <= list_size
+    GROUP BY 1,2,3,4,5,6
+)
+{{ results_sql }}
+;
+CREATE INDEX ON tmp_bias_mod_adjusted(model_id, list_size, metric, parameter);
+
+
+-- Combine adjusted and unadjusted
+DROP TABLE IF EXISTS {{schema}}.model_adjustment_results_{{demo_col}};
+CREATE TABLE {{schema}}.model_adjustment_results_{{demo_col}}
+AS
+SELECT o.model_id, m.model_group_id, m.train_end_time,
+       o.list_size, a.past_train_end_time, o.metric, o.parameter,
+       -- unadjusted (base) values
+       o.value AS base_value, o.max_recall_ratio AS base_max_recall_ratio
+         {% for demo1, demo2 in demo_permutations %}
+       , o.recall_{{demo1}}_to_{{demo2}} AS base_recall_{{demo1}}_to_{{demo2}}
+         {% endfor %}
+         {% for demo in demo_values %}
+       , o.frac_{{demo}} AS base_frac_{{demo}}
+       , o.recall_{{demo}} AS base_recall_{{demo}}
+         {% endfor %}
+
+       -- adjusted values
+       , a.value AS adj_value, a.max_recall_ratio AS adj_max_recall_ratio
+         {% for demo1, demo2 in demo_permutations %}
+       , a.recall_{{demo1}}_to_{{demo2}} AS adj_recall_{{demo1}}_to_{{demo2}}
+         {% endfor %}
+         {% for demo in demo_values %}
+       , a.frac_{{demo}} AS adj_frac_{{demo}}
+       , a.recall_{{demo}} AS adj_recall_{{demo}}
+         {% endfor %}
+
+       -- diffs
+       , a.value - o.value AS value_diff,
+       a.max_recall_ratio - o.max_recall_ratio AS recall_ratio_diff
+FROM tmp_bias_mod_overall o
+JOIN tmp_bias_mod_adjusted a USING(model_id, list_size, metric, parameter)
+JOIN tmp_bias_models m USING(model_id)
+;
+
+
+
+-- DWORK-"LIGHT" COMPOSITE MODEL
+-- figure out best model at every depth for each group (rather than guessing) as in Dwork et all
+-- but without fully decoupled models...
+
+DROP TABLE IF EXISTS {{schema}}.composite_results_{{demo_col}};
+CREATE TABLE {{schema}}.composite_results_{{demo_col}}
+AS
+WITH best_mgs_rr AS (
+  -- model_rank as the tie breker has the same potential issues as above, but may be amplified by the
+  -- fact it's calculated across different models here. Also need to tie break beyond this since we
+  -- could possible have ties across demos in that case, but there random should be fine since we'll
+  -- be well-ordered within demo for calculating group-k, rolling precision, etc.
+  SELECT *, ROW_NUMBER() OVER (PARTITION BY train_end_time ORDER BY recall_demo_rolling ASC, model_rank ASC, RANDOM()) AS rn_endtime_recall
+  FROM tmp_bias_rolling_recall
+  WHERE rn_mg_perf = 1
+)
+, group_nums_pre AS (
+  SELECT DISTINCT ON (train_end_time, demo_col, demo_value, list_size)
+    train_end_time, list_size, demo_col, demo_value, rn_demo AS group_k, model_group_id, precision_demo_rolling, recall_demo_rolling
+  FROM best_mgs_rr rr
+  JOIN tmp_bias_list_sizes ls ON rr.rn_endtime_recall <= ls.list_size
+  ORDER BY train_end_time, demo_col, demo_value, list_size, rn_demo DESC
+), group_nums AS (
+  SELECT DISTINCT 'composite'::VARCHAR(256) AS method, model_group_id,
+         et.past_train_end_time, et.future_train_end_time,
+         list_size, demo_value, group_k
+  FROM group_nums_pre gnp
+  JOIN tmp_bias_end_times et
+    ON gnp.train_end_time = et.past_train_end_time
+)
+{{ results_sql }}
+;
+
+
+-- FULL DECOUPLED COMPOSITE MODEL
+-- Requires you to have built separate models for each group identified by a set of experiment hashes
+-- with `decoupled_experiments := [(experiment_hash, demo_value), (experiment_hash, demo_value), ...]
+-- A bit of a hack, but also allows specifying a separate entity_demos table here as well (specifically
+-- for JoCo where the entities change over match dates)
+-- NOTE: subsampling will only work if the entity_ids (e.g., JoCo matchdatetimes) correspond between
+-- the two entity_demos tables (or only one is used)
+
+
+{% if decoupled_experiments %}
+
+-- TODO: DRY up with normal rolling recall
+-- Decoupled Rolling Recall: sorted subgroups with subgroup recall up to that individual
+DROP TABLE IF EXISTS tmp_bias_rolling_recall_decoupled CASCADE;
+CREATE LOCAL TEMPORARY TABLE tmp_bias_rolling_recall_decoupled
+  ON COMMIT PRESERVE ROWS
+AS
+WITH exp_demo AS (
+  {% for exp_hash, demo in decoupled_experiments %}
+  SELECT '{{exp_hash}}'::VARCHAR(256) AS experiment_hash, '{{demo}}'::VARCHAR(64) AS demo_value
+  {% if not loop.last %}
+  UNION ALL
+  {% endif %}
+  {% endfor %}
+)
+, preds AS (
+  SELECT ed.demo_value AS model_demo, mods.train_end_time, mods.model_group_id, p.model_id, p.entity_id, p.as_of_date, p.score, p.label_value,
+         row_number() OVER (PARTITION BY p.model_id ORDER BY p.score DESC, RANDOM()) AS model_rank
+  FROM exp_demo ed
+  JOIN model_metadata.experiment_models em USING(experiment_hash)
+  JOIN model_metadata.models mods USING(model_hash)
+  JOIN test_results.predictions p USING(model_id)
+  {% if subsample or bootstrap %}
+  -- only retain entities in the subsample/bootstrap, if using
+  JOIN tmp_bias_sample USING(entity_id, as_of_date)
+  {% endif %}
+)
+, demo AS (
+  SELECT p.entity_id, p.train_end_time, p.model_group_id, p.model_id, p.score, p.label_value, p.model_rank,
+         '{{demo_col}}'::VARCHAR(256) AS demo_col, {{demo_col}} AS demo_value
+  FROM {{decoupled_entity_demos}} d
+  JOIN preds p USING(entity_id, as_of_date)
+)
+, demo_rn AS (
+  SELECT *, ROW_NUMBER() OVER (PARTITION BY model_id, demo_value ORDER BY model_rank ASC, RANDOM()) AS rn_demo
+  FROM demo
+)
+, rolling_recall AS (
+  SELECT *,
+         COUNT(*) OVER w_roll AS num_demo_rolling,
+         SUM(label_value) OVER w_roll AS tp_demo_rolling,
+         1.0000*(SUM(label_value) OVER w_roll)/(SUM(label_value) OVER w_all) AS recall_demo_rolling
+  FROM demo_rn
+  WINDOW w_roll AS (PARTITION BY model_id, demo_value ORDER BY rn_demo ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW),
+         w_all AS (PARTITION BY model_id, demo_value)
+)
+SELECT *, 
+        1.0000*tp_demo_rolling/num_demo_rolling AS precision_demo_rolling,
+        -- TODO: model_rank as tie breaker respects ordering of the scores, but may favor groups with higher
+        --       precision if there are many ties to break across multiple groups.
+        ROW_NUMBER() OVER (PARTITION BY model_id ORDER BY recall_demo_rolling ASC, model_rank ASC) AS rn_recall,
+        ROW_NUMBER() OVER (PARTITION BY train_end_time, demo_col, demo_value, rn_demo ORDER BY 1.0000*tp_demo_rolling/num_demo_rolling DESC, RANDOM()) AS rn_mg_perf
+FROM rolling_recall
+ORDER BY model_group_id, model_id, rn_demo
+;
+
+-- FIXME: Gross modification to allow code reuse from above, swapping in a union of the decoupled
+--        and overall rolling recall tables to tmp_bias_rolling_recall
+ALTER TABLE tmp_bias_rolling_recall RENAME TO tmp_bias_rolling_recall_coupled;
+
+DROP TABLE IF EXISTS tmp_bias_rolling_recall;
+CREATE LOCAL TEMPORARY TABLE tmp_bias_rolling_recall
+  ON COMMIT PRESERVE ROWS
+AS
+WITH pre AS (
+  SELECT entity_id, train_end_time, model_group_id, model_id, score, label_value, model_rank,
+         demo_col, demo_value, rn_demo, num_demo_rolling, tp_demo_rolling, recall_demo_rolling,
+         precision_demo_rolling, rn_recall
+  FROM tmp_bias_rolling_recall_decoupled
+  UNION ALL
+  SELECT entity_id, train_end_time, model_group_id, model_id, score, label_value, model_rank,
+         demo_col, demo_value, rn_demo, num_demo_rolling, tp_demo_rolling, recall_demo_rolling,
+         precision_demo_rolling, rn_recall
+  FROM tmp_bias_rolling_recall_coupled
+)
+SELECT *, ROW_NUMBER() OVER (PARTITION BY train_end_time, demo_col, demo_value, rn_demo ORDER BY precision_demo_rolling DESC, RANDOM()) AS rn_mg_perf
+FROM pre
+;
+CREATE INDEX ON tmp_bias_rolling_recall(train_end_time, model_group_id, demo_value, num_demo_rolling);
+CREATE INDEX ON tmp_bias_rolling_recall(train_end_time, model_group_id, rn_recall);
+CREATE INDEX ON tmp_bias_rolling_recall(train_end_time, demo_value, rn_mg_perf);
+
+
+
+
+DROP TABLE IF EXISTS {{schema}}.composite_results_decoupled_{{demo_col}};
+CREATE TABLE {{schema}}.composite_results_decoupled_{{demo_col}}
+AS
+WITH best_mgs_rr AS (
+  -- model_rank as the tie breker has the same potential issues as above, but may be amplified by the
+  -- fact it's calculated across different models here. Also need to tie break beyond this since we
+  -- could possible have ties across demos in that case, but there random should be fine since we'll
+  -- be well-ordered within demo for calculating group-k, rolling precision, etc.
+  SELECT *, ROW_NUMBER() OVER (PARTITION BY train_end_time ORDER BY recall_demo_rolling ASC, model_rank ASC, RANDOM()) AS rn_endtime_recall
+  FROM tmp_bias_rolling_recall
+  WHERE rn_mg_perf = 1
+)
+, group_nums_pre AS (
+  SELECT DISTINCT ON (train_end_time, demo_col, demo_value, list_size)
+    train_end_time, list_size, demo_col, demo_value, rn_demo AS group_k, model_group_id, precision_demo_rolling, recall_demo_rolling
+  FROM best_mgs_rr rr
+  JOIN tmp_bias_list_sizes ls ON rr.rn_endtime_recall <= ls.list_size
+  ORDER BY train_end_time, demo_col, demo_value, list_size, rn_demo DESC
+), group_nums AS (
+  SELECT DISTINCT 'composite_decoupled'::VARCHAR(256) AS method, model_group_id,
+         et.past_train_end_time, et.future_train_end_time,
+         list_size, demo_value, group_k
+  FROM group_nums_pre gnp
+  JOIN tmp_bias_end_times et
+    ON gnp.train_end_time = et.past_train_end_time
+)
+{{ results_sql }}
+;
+
+{% endif %}
+
+DROP TABLE IF EXISTS tmp_bias_rolling_recall CASCADE;
+DROP TABLE IF EXISTS tmp_bias_rolling_recall_coupled CASCADE;
+DROP TABLE IF EXISTS tmp_bias_rolling_recall_decoupled CASCADE;
+
+
+
