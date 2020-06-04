@@ -39,7 +39,13 @@ ENTITY_DEMO_FILES = {
             SELECT num_match=1 AS pass_check
             FROM all_matches
         """
-    }
+        },
+    'elsal': {
+        'sql_tmpl': 'elsal_entity_demos.sql.tmpl',
+        'check_sql': """
+            select 1=1 AS pass_check
+        """
+        }
 }
 
 class RecallAdjuster(object):
@@ -56,7 +62,10 @@ class RecallAdjuster(object):
         sample_weights=None,
         bootstrap_weights=None,
         decoupled_experiments=None,
-        decoupled_entity_demos=None
+        decoupled_entity_demos=None,
+        model_group_ids = None,
+        dataset = None,
+        demo_values = None
         ):
         """
         Arguments:
@@ -92,6 +101,14 @@ class RecallAdjuster(object):
                 Optional "schema.table_name" for a separate entity_demos table to be used for the decoupled
                 experiments, for instance in cases where entity_ids may differ between modeling runs
                 such as is the case with JoCo matches. If specified, must be pre-computed.
+            model_group_ids:
+                Optional model_group_ids for choosing specific model groups to select and run RecallAdjuster on.
+                This is an alternative way of selecting models in addition to specifying experiment_hash.
+            dataset:
+                Name of the dataset on which it runs. Specifying the name can allow for running scripts tuned for
+                this dataset.
+            demo_values:
+                Values of the protected attribute we only care about.
         """
 
         # store parameters
@@ -109,17 +126,26 @@ class RecallAdjuster(object):
             list_sizes = [list_sizes]
         self.params['list_sizes'] = list_sizes
         self.params['demo_col'] = demo_col
+        self.params['model_group_ids'] = model_group_ids
+        self.params['dataset'] = dataset
+        self.params['demo_values'] = demo_values
 
         # check consistency of date pairs
         self.validate_dates()
 
         # create a few temporary tables we'll need for calculations
-        sql = Template(open('recall_adjustment_pre.sql.tmpl', 'r').read()).render(**self.params)
+        if(self.params['dataset'] == 'elsal'):
+            print("Running ELSal Pre-Recall Adjustment")
+            sql = Template(open('elsal_recall_adjustment_pre.sql.tmpl', 'r').read()).render(**self.params)
+        else:
+            sql = Template(open('recall_adjustment_pre.sql.tmpl', 'r').read()).render(**self.params)
+
         self.engine.execute(sql)
         self.engine.execute("COMMIT")
 
         if entity_demos.find('.') > -1:
             self.params['entity_demos'] = entity_demos
+            print("Not executing Entity Demos -- picking up from previously built schema.")
         elif entity_demos in ENTITY_DEMO_FILES.keys():
             self.params['entity_demos'] = self.create_entity_demos(entity_demos)
         else:
@@ -128,7 +154,9 @@ class RecallAdjuster(object):
         # calculate demo values for general use, ordered by frequency
         sql = "SELECT %s, COUNT(*) AS num FROM %s GROUP BY 1 ORDER BY 2 DESC" % (self.params['demo_col'], self.params['entity_demos'])
         res = self.engine.execute(sql).fetchall()
-        self.params['demo_values'] = [r[0] for r in res]
+        if(self.params['demo_values']==None):
+            print("Setting demo values. Not using pre-set values")
+            self.params['demo_values'] = [r[0] for r in res]
         self.params['demo_permutations'] = list(permutations(self.params['demo_values'], 2))
 
         if sample_weights is not None and bootstrap_weights is not None:
@@ -148,7 +176,7 @@ class RecallAdjuster(object):
         else:
             self.params['subsample'] = False
             self.params['bootstrap'] = False
-
+            print("Not running subsampling OR bootstrap based models")
         if decoupled_experiments:
             # check that all demo_values have coverage in decoupled_experiments
             self.ensure_all_demos([de[1] for de in decoupled_experiments])
@@ -263,7 +291,7 @@ class RecallAdjuster(object):
                 If not specified, the latest pair will be used
             list_size:
                 The list size to use for plotting (If unspecified, the largest value will be used)
-            metric:
+            metric:s
                 The metric for plotting, currently only 'precision@' is supported
             ax:
                 Optionally pass an axes object for the plot to use

@@ -21,7 +21,7 @@ WITH ref_models_pre AS (
 )
 SELECT p.entity_id,
 p.as_of_date,
-replace(plevel, ' ', '_') as plevel
+replace(plevel_2way, ' ', '_') as plevel
 from test_results.predictions p
 join ref_models rm USING(model_id)
 join projectid_mapping USING(entity_id)

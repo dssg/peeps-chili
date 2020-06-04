@@ -222,8 +222,7 @@ SELECT o.model_id, m.model_group_id, m.train_end_time,
        a.max_recall_ratio - o.max_recall_ratio AS recall_ratio_diff
 FROM tmp_bias_mod_overall o
 JOIN tmp_bias_mod_adjusted a USING(model_id, list_size, metric, parameter)
-JOIN tmp_bias_models m USING(model_id)
-;
+JOIN tmp_bias_models m USING(model_id);
 
 
 
