@@ -1,0 +1,6 @@
+# ignore everything in the following folders
+code/el_salvador/triage/conf/local/**
+
+# ignore log files
+LOG*
+
