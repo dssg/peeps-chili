@@ -1,6 +1,12 @@
 # ignore everything in the following folders
 code/el_salvador/triage/conf/local/**
+config/**
 
 # ignore log files
 LOG*
 
+# Jupyter Notebook
+.ipynb_checkpoints
+
+# VS Code
+.vscode/
