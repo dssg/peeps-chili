@@ -1,0 +1,36 @@
+# ignore everything in the following folders
+# data/**
+logs/**
+references/**
+results/**
+conf/**
+
+# Jupyter Notebook
+.ipynb_checkpoints
+*only_local*.ipynb
+*local_only*.ipynb
+
+
+# IPython
+.ipython/profile_default/history.sqlite
+.ipython/profile_default/startup/README
+
+
+# IntelliJ
+.idea/
+*.iml
+out/
+.idea_modules/
+**/__pycache__/**
+
+# VS Code
+.vscode/
+
+# desktop
+desktop.ini
+
+# bash
+*.sh
+
+# config files
+*.yaml
