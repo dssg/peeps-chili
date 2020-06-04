@@ -11,9 +11,6 @@ from triage.experiments import MultiCoreExperiment
 from triage.component.timechop.timechop import Timechop
 from triage.component.timechop.plotting import visualize_chops
 from triage import create_engine
-# project_path = '/home/ubuntu/dsapp/ducktales/'
-# project_path = '../'
-# sys.path.append(project_path)
 
 logging.basicConfig(level=logging.DEBUG, filename="LOG_Triage.debug", filemode='w')
 logging.getLogger().addHandler(logging.StreamHandler(sys.stdout))
@@ -32,7 +29,7 @@ def read_config_file(config_file):
 
 
 def setup_experiment(experiment_config_file, use_s3, s3_path):
-    project_path = '.'
+    project_path = ''
     experiment_config = read_config_file(experiment_config_file)
 
     cred_folder = os.path.join(project_path, 'conf', 'local')
@@ -57,8 +54,8 @@ def setup_experiment(experiment_config_file, use_s3, s3_path):
     cf = ntpath.basename(experiment_config_file)[0:10]
     
     if use_s3 == False:
-        data_folder = '/mnt/data/experiment_data/'
-        project_folder = os.path.join(data_folder, 'triage', 'donors', '{}_{}_{}'.format(user, timestr, cf))
+        data_folder = '/data2/ELSAL_TRIAGE/'
+        project_folder = os.path.join(data_folder, 'triage', 'elsal') #'{}_{}_{}'.format(user, timestr, cf))
 
         if not os.path.exists(project_folder):
             os.mkdir(project_folder)
@@ -72,6 +69,7 @@ def run_exp(config_file, plot_timechops=True, run_exp=True, use_s3=False, s3_pat
         visualize_timechop(config_file)
 
     config, sql_engine, proj_folder = setup_experiment(config_file, use_s3, s3_path)
+    print("Project Folder="+str(proj_folder))
 
     if run_exp: 
         if n_jobs> 1:
@@ -81,6 +79,7 @@ def run_exp(config_file, plot_timechops=True, run_exp=True, use_s3=False, s3_pat
                 n_processes=n_jobs,
                 n_db_processes=n_jobs,
                 project_path=proj_folder
+                replace=False
             )
         else:
             experiment = SingleThreadedExperiment(
@@ -88,6 +87,7 @@ def run_exp(config_file, plot_timechops=True, run_exp=True, use_s3=False, s3_pat
                 db_engine=sql_engine,
                 project_path=proj_folder,
                 cleanup=True
+                replace=False
             )
 
         st = time.time()
@@ -133,6 +133,7 @@ def visualize_timechop(config_file):
     data_folder = '/mnt/data/experiment_data/'
     save_path = os.path.join(data_folder, 'triage', 'elsal', 'timechops', '{}_{}_{}.png'.format(user, timestr, cf))
     
+
     visualize_chops(
         chopper=chopper,
         show_as_of_times=True,
@@ -150,7 +151,8 @@ if __name__ == '__main__':
         config_file, 
         plot_timechops=False, 
         run_exp=True,
-        use_s3=True,
+        use_s3=False,
         s3_path='s3://dsapp-cmu-research/triage/el_salvador',
         n_jobs=int(n_jobs)
     )
+
