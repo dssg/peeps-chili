@@ -1,0 +1,80 @@
+- # blockgroup-level MH case and violation history
+    prefix: 'geo_mh_insp'
+    from_obj: |
+        (
+          SELECT g2.entity_id, ev.outcome_date AS bg_knowledge_date, 
+                 1 AS bg_case, ev.outcome AS bg_violation_case
+          FROM staging.mh_events ev
+          JOIN staging.mh_census_geo g1 USING(entity_id)
+          JOIN staging.mh_census_geo g2 ON g1.census_blockgroup_2010 = g2.census_blockgroup_2010 AND g1.entity_id <> g2.entity_id
+        ) bg_inspections
+    knowledge_date_column: bg_knowledge_date
+
+    # using zero_noflag for all imputations at the moment to replicate the
+    # behavior of old triage...
+    aggregates_imputation:
+        all:
+            type: 'zero_noflag'
+    categoricals_imputation:
+        all:
+            type: 'zero_noflag'
+
+    aggregates:
+        - # number of properties with an inspection case in the blockgroup
+            quantity: 'bg_case'
+            metrics: ['sum']
+        - # number of properties with a serious violation in the blockgroup and serious violation rate (per inspection)
+            quantity: 'bg_violation_case'
+            metrics: ['sum', 'avg']
+    intervals: ['3month', '6month', '1y', '2y', '5y', '10y', '20y']
+    groups: ['entity_id']
+# - # blockgroup-level MH case and violation history
+#     prefix: 'geo_all_violations'
+#     from_obj: |
+#         (
+#           SELECT g2.entity_id, v.violation_knowlege_date AS violation_knowledge_date, 
+
+#                  v.violation_flag AS bg_any_violation, 
+#                  v.violation_serious_flag AS bg_serious_violation,
+#                  v.violation_smkcobrk_flag AS bg_smkcobrk_violation,
+
+#                  v.violation_unit_wt AS bg_any_vltn_unit_wt,
+#                  v.violation_serious_unit_wt AS bg_serious_vltn_unit_wt,
+#                  v.violation_smkcobrk_unit_wt AS bg_smkcobrk_vltn_unit_wt
+
+#           FROM staging.mh_violation_info v
+#           JOIN staging.mh_census_geo g1 USING(entity_id)
+#           JOIN staging.mh_census_geo g2 ON g1.census_blockgroup_2010 = g2.census_blockgroup_2010 AND g1.entity_id <> g2.entity_id
+#         ) bg_violations
+#     knowledge_date_column: violation_knowledge_date
+#
+#     # using zero_noflag for all imputations at the moment to replicate the
+#     # behavior of old triage...
+#     aggregates_imputation:
+#         all:
+#             type: 'zero_noflag'
+#     categoricals_imputation:
+#         all:
+#             type: 'zero_noflag'
+# 
+#     aggregates:
+#         - # number of violations of any type in the blockgroup
+#             quantity: 'bg_any_violation'
+#             metrics: ['sum']
+#         - # number of violations of any type in the blockgroup, weighted by number of units
+#             quantity: 'bg_any_vltn_unit_wt'
+#             metrics: ['sum']
+#         - # number of serious violations in the blockgroup (different from bg_violation_case because this is at the violation level not the case level)
+#             quantity: 'bg_serious_violation'
+#             metrics: ['sum']
+#         - # number of serious violations in the blockgroup, weighted by number of units
+#             quantity: 'bg_serious_vltn_unit_wt'
+#             metrics: ['sum']
+#         - # number of smoke/CO detector or breaker label violations in the blockgroup
+#             quantity: 'bg_smkcobrk_violation'
+#             metrics: ['sum']
+#         - # number of smoke/CO detector or breaker label violations in the blockgroup, weighted by number of units
+#             quantity: 'bg_smkcobrk_vltn_unit_wt'
+#             metrics: ['sum']
+#     intervals: ['3month', '6month', '1y', '2y', '5y', '10y', '20y']
+#     groups: ['entity_id']

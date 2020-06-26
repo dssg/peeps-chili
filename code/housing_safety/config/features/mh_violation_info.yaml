@@ -1,0 +1,168 @@
+- # these violation features only cover serious violations at the case level (see below for others as well)
+    prefix: 'violations'
+    from_obj: |
+        (
+            SELECT *,
+                (
+                    outcome_date - LAG(outcome_date) OVER (
+                        PARTITION BY entity_id ORDER BY outcome_date
+                    )
+                )::INT as days_between_violations
+            FROM staging.mh_events
+            WHERE outcome = 1
+        ) as violations
+    knowledge_date_column: 'outcome_date'
+
+    # using zero_noflag for all imputations at the moment to replicate the
+    # behavior of old triage...
+    aggregates_imputation:
+        all:
+            type: 'zero_noflag'
+    categoricals_imputation:
+        all:
+            type: 'zero_noflag'
+
+    aggregates:
+        - # days between inspection cases finding severe violations
+            quantity: 
+                days_btw_vio: days_between_violations
+            metrics: ['min', 'max', 'sum', 'avg', 'stddev']
+    intervals: ['1y', '2y', '5y', '10y', '20y']
+    groups: ['entity_id']
+- # features at the violation level, allowing for multiple per case
+    prefix: 'all_violations'
+    from_obj: 'staging.mh_violation_info'
+    knowledge_date_column: 'violation_knowlege_date'
+
+    # using zero_noflag for all imputations at the moment to replicate the
+    # behavior of old triage...
+    aggregates_imputation:
+        all:
+            type: 'zero_noflag'
+    categoricals_imputation:
+        all:
+            type: 'zero_noflag'
+
+    aggregates:
+        - # presence and number of violations (minor or serious)
+            quantity: 
+                vio_flag: violation_flag
+            metrics: ['max', 'sum']
+        - # presence and number of serious violations
+            quantity: 
+                vio_serious: violation_serious_flag
+            metrics: ['max', 'sum']
+        - # presence and number of smoke detector / co detector / label breakers violations
+            quantity: 
+                vio_smkcobrk: violation_smkcobrk_flag
+            metrics: ['max', 'sum']
+        - # all violations (minor or serious) weighted by number of units
+            quantity: 
+                vio_unit_wt: violation_unit_wt
+            metrics: ['sum']
+        - # serious violations weighted by number of units
+            quantity: 
+                vio_srs_unit_wt: violation_serious_unit_wt
+            metrics: ['sum']
+        - # smoke detector / co detector / label breakers violations weighted by number of units
+            quantity: 
+                vio_smk_unit_wt: violation_smkcobrk_unit_wt
+            metrics: ['sum']
+    intervals: ['1y', '2y', '5y', '10y', '20y']
+    groups: ['entity_id']
+- # features at the violation level, allowing for multiple per case
+    prefix: 'violation_cats'
+    from_obj: 'staging.mh_violation_info'
+    knowledge_date_column: 'violation_knowlege_date'
+
+    # using zero_noflag for all imputations at the moment to replicate the
+    # behavior of old triage...
+    aggregates_imputation:
+        all:
+            type: 'zero_noflag'
+    categoricals_imputation:
+        all:
+            type: 'zero_noflag'
+
+    categoricals:
+        - # full municipal code (e.g. 17.20.900 C)
+            column: muni_code
+            choice_query: |
+                SELECT muni_code
+                FROM (
+                    SELECT muni_code, COUNT(*) AS num
+                    FROM staging.mh_violation_info
+                    GROUP BY muni_code
+                    ORDER BY num DESC
+                ) v
+                LIMIT 128
+            metrics: ['max']
+        - # municipal code title (e.g. 17)
+            column: muni_title
+            choice_query: |
+                SELECT muni_title
+                FROM (
+                    SELECT muni_title, COUNT(*) AS num
+                    FROM staging.mh_violation_info
+                    GROUP BY muni_title
+                    ORDER BY num DESC
+                ) v
+                LIMIT 32
+            metrics: ['max']
+        - # municipal code chapter (e.g. 17.20)
+            column: muni_chapt
+            choice_query: |
+                SELECT muni_chapt
+                FROM (
+                    SELECT muni_chapt, COUNT(*) AS num
+                    FROM staging.mh_violation_info
+                    GROUP BY muni_chapt
+                    ORDER BY num DESC
+                ) v
+                LIMIT 32
+            metrics: ['max']
+        - # municipal code section (e.g. 17.20.900)
+            column: muni_secn
+            choice_query: |
+                SELECT muni_secn
+                FROM (
+                    SELECT muni_secn, COUNT(*) AS num
+                    FROM staging.mh_violation_info
+                    GROUP BY muni_secn
+                    ORDER BY num DESC
+                ) v
+                LIMIT 64
+            metrics: ['max']
+    intervals: ['3y', '20y']
+    groups: ['entity_id']
+- # typical length before a violation was resolved and presence/number of currently open violations (only make much sense over long time window)
+    prefix: 'vio_length'
+    from_obj: 'staging.mh_violation_info'
+    knowledge_date_column: 'violation_knowlege_date'
+
+    # using zero_noflag for all imputations at the moment to replicate the
+    # behavior of old triage...
+    aggregates_imputation:
+        all:
+            type: 'zero_noflag'
+    categoricals_imputation:
+        all:
+            type: 'zero_noflag'
+
+    aggregates:
+        - # average and max days previous cases were open (using collate_date if still open)
+            quantity: 
+                days_open: |
+                    LEAST( 
+                        (CASE WHEN violation_close_date IS NOT NULL AND violation_close_date <= '{collate_date}'::DATE 
+                                    THEN violation_close_date 
+                              ELSE '{collate_date}'::DATE 
+                         END) - violation_knowlege_date::DATE, 
+                        1)
+            metrics: ['avg', 'max']
+        - # whether there are any cases that are currently open
+            quantity:
+                open_violtn: "CASE WHEN violation_close_date IS NULL OR violation_close_date > '{collate_date}'::DATE THEN 1 ELSE 0 END"
+            metrics: ['max', 'sum']
+    intervals: ['20y']
+    groups: ['entity_id']
