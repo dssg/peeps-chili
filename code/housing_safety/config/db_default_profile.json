@@ -1,7 +1,0 @@
-{
-"host":"sj-restore.cjtbxnsr2fzp.us-west-2.rds.amazonaws.com", 
-"user":"san_jose_housing",
-"db":"san_jose_housing",
-"pass":"AGAINMOVENEXTexpect",
-"port":5432
-}
