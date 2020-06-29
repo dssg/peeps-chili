@@ -1,0 +1,245 @@
+
+# This config contains code to generate features from the mh_acs_info table.
+# These features describe the area around a parcel in terms of its demographic
+# features (e.g., income, languages spoken).
+- 
+    prefix: 'acs'
+    from_obj: 'staging.mh_acs_info'
+    knowledge_date_column: 'acs_knowledge_date'
+
+    # using zero_noflag for all imputations at the moment to replicate the
+    # behavior of old triage...
+    aggregates_imputation:
+        all:
+            type: 'zero_noflag'
+    categoricals_imputation:
+        all:
+            type: 'zero_noflag'
+
+    aggregates:
+        - # percent white
+            quantity:
+                race_white_pct: race_count_white / NULLIF(race_count_total, 0)
+            metrics: ['max']
+        - # percent afam
+            quantity:
+                race_afam_pct: race_count_black / NULLIF(race_count_total, 0)
+            metrics: ['max']
+        - # percent hispanic
+            quantity:
+                race_hispanic_pct: race_count_hispanic / NULLIF(race_count_total, 0)
+            metrics: ['max']
+        - # percent aapi
+            quantity:
+                race_aapi_pct: race_count_asian / NULLIF(race_count_total, 0)
+            metrics: ['max']
+
+        - # percent 9th grade education
+            quantity:
+                edu_9th_pct: edu_count_9th / NULLIF(edu_count_total, 0)
+            metrics: ['max']
+        - # percent 12th grade education
+            quantity:
+                edu_12th_pct: edu_count_12th / NULLIF(edu_count_total, 0)
+            metrics: ['max']
+        - # percent hs education
+            quantity:
+                edu_hs_pct: edu_count_hs / NULLIF(edu_count_total, 0)
+            metrics: ['max']
+        - # percent some college education
+            quantity:
+                edu_some_college_pct: edu_count_some_college / NULLIF(edu_count_total, 0)
+            metrics: ['max']
+        - # percent associates education
+            quantity:
+                edu_associates_pct: edu_count_associates / NULLIF(edu_count_total, 0)
+            metrics: ['max']
+        - # percent BA education
+            quantity:
+                edu_ba_pct: edu_count_ba / NULLIF(edu_count_total, 0)
+            metrics: ['max']
+        - # percent advanced education
+            quantity:
+                edu_advanced_pct: edu_count_advanced / NULLIF(edu_count_total, 0)
+            metrics: ['max']
+
+        - # poverty rate
+            quantity:
+                poverty_pct: povertystatus_family_count_poverty / NULLIF(povertystatus_family_count_total, 0)
+            metrics: ['max']
+
+        - # uninsured rate
+            quantity:
+                uninsured_pct: health_count_uninsured / NULLIF(health_count_total, 0)
+            metrics: ['max']
+        - # employer insurance percent
+            quantity:
+                insurance_employer_pct: health_count_insured_employer / NULLIF(health_count_total, 0)
+            metrics: ['max']
+        - # purchased insurance percent
+            quantity:
+                insurance_purchase_pct: health_count_insured_purchase / NULLIF(health_count_total, 0)
+            metrics: ['max']
+        - # medicare insurance percent
+            quantity:
+                insurance_medicare_pct: health_count_insured_medicare / NULLIF(health_count_total, 0)
+            metrics: ['max']
+        - # medicaid insurance percent
+            quantity:
+                insurance_medicaid_pct: health_count_insured_medicaid / NULLIF(health_count_total, 0)
+            metrics: ['max']
+        - # military insurance percent
+            quantity:
+                insurance_military_pct: health_count_insured_military / NULLIF(health_count_total, 0)
+            metrics: ['max']
+        - # veteran insurance percent
+            quantity:
+                insurance_veteran_pct: health_count_insured_veteran / NULLIF(health_count_total, 0)
+            metrics: ['max']
+
+        - # owner-occupancy rate
+            quantity:
+                tenure_owner_pct: tenure_count_owner / NULLIF(tenure_count_total, 0)
+            metrics: ['max']
+        - # renter-occupancy rate
+            quantity:
+                tenure_renter_pct: tenure_count_renter / NULLIF(tenure_count_total, 0)
+            metrics: ['max']
+
+        - # housing occupied pct
+            quantity:
+                housing_occupied_pct: occupancy_occupied / NULLIF(occupancy_total, 0)
+            metrics: ['max']
+        - # housing vacancy pct
+            quantity:
+                housing_vacant_pct: occupancy_vacant / NULLIF(occupancy_total, 0)
+            metrics: ['max']
+
+        - # Median gross rent (e.g., rent + utilities)
+            quantity:
+                rent_median_gross: rent_median_gross
+            metrics: ['max']
+        - # Rent as pct of income
+            quantity:
+                rent_pct_of_income: rent_pct_of_income
+            metrics: ['max']
+
+        - # median age
+            quantity:
+                median_age: median_age_all
+            metrics: ['max']
+
+        - # US/Protectorate Born or American Parents
+            quantity:
+                citizen_at_birth_pct: (citizenship_born_us + citizenship_born_us_islands + citizenship_born_am_parents) / NULLIF(citizenship_total, 0)
+            metrics: ['max']
+        - # Naturalized Citizen
+            quantity:
+                citizen_naturalized_pct: (citizenship_naturalized) / NULLIF(citizenship_total, 0)
+            metrics: ['max']
+        - # Non-Citizen
+            quantity:
+                citizen_non_citizen_pct: (citizenship_not_us_citizen) / NULLIF(citizenship_total, 0)
+            metrics: ['max']
+
+        - # Geographic mobility - same house as last year
+            quantity:
+                geo_mobility_same_house_pct: (geo_mobility_same_house) / NULLIF(geo_mobility_total, 0)
+            metrics: ['max']
+        - # Geographic mobility - same county as last year
+            quantity:
+                geo_mobility_same_county_pct: (geo_mobility_same_county) / NULLIF(geo_mobility_total, 0)
+            metrics: ['max']
+        - # Geographic mobility - same state as last year
+            quantity:
+                geo_mobility_same_state_pct: (geo_mobility_same_state) / NULLIF(geo_mobility_total, 0)
+            metrics: ['max']
+        - # Geographic mobility - different state from last year
+            quantity:
+                geo_mobility_diff_state_pct: (geo_mobility_diff_state) / NULLIF(geo_mobility_total, 0)
+            metrics: ['max']
+        - # Geographic mobility - from abroad since last year
+            quantity:
+                geo_mobility_from_abroad_pct: (geo_mobility_from_abroad) / NULLIF(geo_mobility_total, 0)
+            metrics: ['max']
+
+        - # Travel time to work - under 15 minutes
+            quantity:
+                work_travel_under15min_pct: (work_travel_under5min + work_travel_5to9min + work_travel_10to14min) / NULLIF(work_travel_total, 0)
+            metrics: ['max']
+        - # Travel time to work - 15-30 minutes
+            quantity:
+                work_travel_15to30min_pct: (work_travel_15to19min + work_travel_20to24min + work_travel_25to29min) / NULLIF(work_travel_total, 0)
+            metrics: ['max']
+        - # Travel time to work - 30-45 minutes
+            quantity:
+                work_travel_30to45min_pct: (work_travel_30to34min + work_travel_35to39min + work_travel_40to44min) / NULLIF(work_travel_total, 0)
+            metrics: ['max']
+        - # Travel time to work - 45-60 minutes
+            quantity:
+                work_travel_45to60min_pct: (work_travel_45to59min) / NULLIF(work_travel_total, 0)
+            metrics: ['max']
+        - # Travel time to work - 60-90 minutes
+            quantity:
+                work_travel_60to90min_pct: (work_travel_60to89min) / NULLIF(work_travel_total, 0)
+            metrics: ['max']
+        - # Travel time to work - over 90 minutes
+            quantity:
+                work_travel_over90min_pct: (work_travel_90plusmin) / NULLIF(work_travel_total, 0)
+            metrics: ['max']
+
+        - # Married family household pct
+            quantity:
+                hh_type_married_pct: (hh_type_married) / NULLIF(hh_type_total_hh, 0)
+            metrics: ['max']
+        - # Single father household pct
+            quantity:
+                hh_type_single_father_pct: (hh_type_single_father) / NULLIF(hh_type_total_hh, 0)
+            metrics: ['max']
+        - # Single mother household pct
+            quantity:
+                hh_type_single_mother_pct: (hh_type_single_mother) / NULLIF(hh_type_total_hh, 0)
+            metrics: ['max']
+        - # Living alone household pct
+            quantity:
+                hh_type_nonfam_alone_pct: (hh_type_nonfam_alone) / NULLIF(hh_type_total_hh, 0)
+            metrics: ['max']
+        - # Non-family multi-person household pct
+            quantity:
+                hh_type_nonfam_not_alone_pct: (hh_type_nonfam_not_alone) / NULLIF(hh_type_total_hh, 0)
+            metrics: ['max']
+
+        - # English-only household pct
+            quantity:
+                hh_lang_eng_only_pct: (hh_lang_eng_only) / NULLIF(hh_lang_total_hh, 0)
+            metrics: ['max']
+        - # Spanish, limited-English household pct
+            quantity:
+                hh_lang_span_lim_eng_pct: (hh_lang_span_lim_eng) / NULLIF(hh_lang_total_hh, 0)
+            metrics: ['max']
+        - # Spanish and English household pct
+            quantity:
+                hh_lang_span_and_eng_pct: (hh_lang_span_and_eng) / NULLIF(hh_lang_total_hh, 0)
+            metrics: ['max']
+        - # AAPI, limited-english household pct
+            quantity:
+                hh_lang_aapi_lim_eng_pct: (hh_lang_aapi_lim_eng) / NULLIF(hh_lang_total_hh, 0)
+            metrics: ['max']
+        - # AAPI and English household pct
+            quantity:
+                hh_lang_aapi_and_eng_pct: (hh_lang_aapi_and_eng) / NULLIF(hh_lang_total_hh, 0)
+            metrics: ['max']
+
+        - # Household median income
+            quantity:
+                hh_median_income: hh_med_income
+            metrics: ['max']
+        - # Income inequality gini index
+            quantity:
+                gini_index: gini_index
+            metrics: ['max']
+    # just take the 1-year look back for ACS features to grab the most recent
+    # (we're using the ACS data based on a 5-year rolling window, so doesn't make much
+    # sense to include multiple timeframes here)
+    intervals: ['1y']
+    groups: ['entity_id']

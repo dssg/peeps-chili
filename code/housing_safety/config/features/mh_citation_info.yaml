@@ -1,0 +1,32 @@
+# This config contains code to generate features from the mh_events table.
+# These features describe a parcel's citations history, such as the number of
+# citations building has had in the past year and the amount paid for those
+# citations.
+- 
+    prefix: 'citations'
+    from_obj: 'staging.mh_citation_info'
+    knowledge_date_column: 'citation_knowlege_date'
+
+    # using zero_noflag for all imputations at the moment to replicate the
+    # behavior of old triage...
+    aggregates_imputation:
+        all:
+            type: 'zero_noflag'
+    categoricals_imputation:
+        all:
+            type: 'zero_noflag'
+
+    aggregates:
+        - # previous citations
+            quantity: 'num_citations'
+            metrics: ['sum']
+        - # previous citation dollar amounts
+            quantity: 
+                total_amt: 'total_citation_amount'
+            metrics: ['sum', 'avg', 'max']
+        # There are columns for citations for serious violations as well (num_serious_citations,
+        # serious_citation_amount) but so few of these that they don't seem useful to include
+        # here. Overall, there appear to be relatively few citations associated with these
+        # properties, so we're probably a bit limited in how much we can get from them.
+    intervals: ['1y', '2y', '5y', '10y', '16y']
+    groups: ['entity_id']

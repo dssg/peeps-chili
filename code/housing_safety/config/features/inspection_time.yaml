@@ -1,0 +1,70 @@
+# This config contains code to generate features about the time at which an
+# inspection is done, such as the month, day, and season.
+- 
+    prefix: 'time'
+    from_obj: |
+        (
+            SELECT entity_id,
+                GENERATE_SERIES AS as_of_date,
+                DATE_PART('year', GENERATE_SERIES + INTERVAL '1d') AS calendar_year,
+                DATE_PART('month', GENERATE_SERIES + INTERVAL '1d') AS month_of_year,
+                DATE_PART('day', GENERATE_SERIES + INTERVAL '1d') AS day_of_month,
+                EXTRACT(DOW FROM GENERATE_SERIES + INTERVAL '1d') AS day_of_week,
+                EXTRACT(DOY FROM GENERATE_SERIES + INTERVAL '1d') AS day_of_year,
+                EXTRACT(WEEK FROM GENERATE_SERIES + INTERVAL '1d') AS week_of_year,
+                CASE
+                    WHEN DATE_PART('month', GENERATE_SERIES + INTERVAL '1d') IN (6, 7, 8) THEN 'summer'
+                    WHEN DATE_PART('month', GENERATE_SERIES + INTERVAL '1d') IN (9, 10, 11) THEN 'fall'
+                    WHEN DATE_PART('month', GENERATE_SERIES + INTERVAL '1d') IN (12, 1, 2) THEN 'winter'
+                    WHEN DATE_PART('month', GENERATE_SERIES + INTERVAL '1d') IN (3, 4, 5) THEN 'spring'
+                END AS season
+            FROM (
+                SELECT DISTINCT entity_id
+                FROM staging.master_building_permit
+            ) AS e
+            cross join (
+                SELECT * 
+                FROM GENERATE_SERIES (
+                    '2010-12-31'::DATE,
+                    CURRENT_DATE,
+                    '1d'::INTERVAL
+                )
+            ) AS d
+        ) AS entity_times
+    knowledge_date_column: 'as_of_date'
+
+    # using zero_noflag for all imputations at the moment to replicate the
+    # behavior of old triage...
+    aggregates_imputation:
+        all:
+            type: 'zero_noflag'
+    categoricals_imputation:
+        all:
+            type: 'zero_noflag'
+
+    aggregates:
+        - # year of inspection
+            quantity: 'calendar_year'
+            metrics: ['max']
+        - # month of inspection
+            quantity: 'month_of_year'
+            metrics: ['max']
+        - # day of month of inspection
+            quantity: 'day_of_month'
+            metrics: ['max']
+        - # day of week of inspection
+            quantity: 'day_of_week'
+            metrics: ['max']
+        - # day of year of inspection
+            quantity: 'day_of_year'
+            metrics: ['max']
+        - # week of year of inspection
+            quantity: 'week_of_year'
+            metrics: ['max']
+    categoricals:
+        - # season of inspection
+            column: 'season'
+            choices: ['summer', 'fall', 'winter', 'spring']
+            metrics: ['max']
+    intervals: ['1d']
+    groups: ['entity_id']

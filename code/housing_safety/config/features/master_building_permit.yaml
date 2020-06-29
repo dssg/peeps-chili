@@ -1,0 +1,44 @@
+# This config contains code to generate features from the
+# staging.master_building_permit table, which contains relatively stable and
+# general features of parcels, such as the number of multiple housing permits
+# on a property in a given year and the number of gues rooms on the property.
+- 
+    prefix: 'permit'
+    from_obj: 'staging.master_building_permit'
+    knowledge_date_column: 'issuedate'
+
+    # using zero_noflag for all imputations at the moment to replicate the
+    # behavior of old triage...
+    aggregates_imputation:
+        all:
+            type: 'zero_noflag'
+    categoricals_imputation:
+        all:
+            type: 'zero_noflag'
+
+    aggregates:
+        - # number of apartments on parcel
+            quantity: 'number_apartments'
+            metrics: ['max']
+        - # number of guest rooms on parcel
+            quantity: 'number_guest_rooms'
+            metrics: ['max']
+        - # number of permits on parcel
+            quantity: 'number_mh_permits'
+            metrics: ['max']
+    categoricals:
+         - # type of parcel, uses dynamic query to get 5 most frequent
+            column: 'zonetype1'
+            choice_query: |
+                SELECT zonetype1 
+                FROM (
+                    SELECT count(*),
+                           zonetype1
+                    FROM staging.master_building_permit
+                    GROUP BY zonetype1
+                    ORDER BY count DESC
+                ) zonetypes
+                LIMIT 5
+            metrics: ['max']
+    intervals: ['50y']
+    groups: ['entity_id']
