@@ -33,7 +33,7 @@ def setup_experiment(experiment_config_file, use_s3, s3_path):
     experiment_config = read_config_file(experiment_config_file)
 
     cred_folder = os.path.join(project_path, 'conf', 'local')
-    cred_file = os.path.join(cred_folder, 'credentials.yaml')
+    cred_file = os.path.join(cred_folder, 'credentials_2.yaml')
     
     configs = read_config_file(cred_file)
     db = configs['db']
@@ -54,14 +54,14 @@ def setup_experiment(experiment_config_file, use_s3, s3_path):
     cf = ntpath.basename(experiment_config_file)[0:10]
     
     if use_s3 == False:
-        data_folder = '/data2/ELSAL_TRIAGE/'
+        data_folder = '/mnt/data/experiment_data'
         project_folder = os.path.join(data_folder, 'triage', 'elsal') #'{}_{}_{}'.format(user, timestr, cf))
 
         if not os.path.exists(project_folder):
             os.mkdir(project_folder)
     else:
         project_folder = s3_path
-
+    print(project_folder)
     return experiment_config, sql_engine, project_folder
 
 def run_exp(config_file, plot_timechops=True, run_exp=True, use_s3=False, s3_path=None, n_jobs=1):
@@ -70,6 +70,7 @@ def run_exp(config_file, plot_timechops=True, run_exp=True, use_s3=False, s3_pat
 
     config, sql_engine, proj_folder = setup_experiment(config_file, use_s3, s3_path)
     print("Project Folder="+str(proj_folder))
+    #print(STOP)
 
     if run_exp: 
         if n_jobs> 1:
@@ -78,7 +79,7 @@ def run_exp(config_file, plot_timechops=True, run_exp=True, use_s3=False, s3_pat
                 db_engine=sql_engine,
                 n_processes=n_jobs,
                 n_db_processes=n_jobs,
-                project_path=proj_folder
+                project_path=proj_folder,
                 replace=False
             )
         else:
@@ -86,7 +87,7 @@ def run_exp(config_file, plot_timechops=True, run_exp=True, use_s3=False, s3_pat
                 config=config,
                 db_engine=sql_engine,
                 project_path=proj_folder,
-                cleanup=True
+                cleanup=True,
                 replace=False
             )
 
