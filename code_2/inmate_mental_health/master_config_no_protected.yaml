@@ -1,0 +1,1123 @@
+### This configuration file is intended to be a master aggregation
+### of all features to begin the modeling process.
+
+# TRIAGE CONFIG_VERSION
+config_version: 'v7'
+
+# EXPERIMENT METADATA
+model_comment: 'EXP2_2014-2019_monthly_models_view_warr_bw_bookings_race_no_protected'
+
+# TIME SPLITTING
+# The time window to look at, & how to divide the window into train/test splits
+temporal_config:
+    feature_start_time: '2000-01-01'
+    feature_end_time: '2019-04-01'
+    label_start_time: '2013-01-01'
+    label_end_time: '2019-04-01'
+    model_update_frequency: '4month'
+    label_timespans: ['1y']
+    max_training_histories: ['0d']
+    training_as_of_date_frequencies: ['1y']
+    test_as_of_date_frequencies: ['1y']
+    test_durations: ['0d']
+
+# COHORT CONFIG
+cohort_config:
+    query: |
+        WITH current_inmates AS (
+            SELECT DISTINCT booking.entity_id
+              FROM records.jims_booking_records booking
+              LEFT JOIN records.jims_release_records release
+                   using(sourceid, booking_no)
+             -- If the end date of a daterange is NULL, then postgres will assume it is infinitely in the future
+             WHERE '{as_of_date}'::date <@ daterange(booking.knowledge_date, release.knowledge_date)
+        )
+        SELECT DISTINCT r.entity_id
+          FROM records.jims_release_records r
+               LEFT JOIN current_inmates c
+                 ON c.entity_id = r.entity_id
+               -- released in last 3 years
+         WHERE knowledge_date <@ daterange(('{as_of_date}'::date - '3 years'::interval)::date, '{as_of_date}'::date)
+               -- and not currently in jail
+           AND c.entity_id IS NULL
+           AND r.entity_id IS NOT NULL
+        
+    name: 'release_last_3_years_not_currently_in_jail'
+
+# LABEL GENERATION
+label_config:
+    query: |
+        SELECT entity_id,
+               bool_or(CASE WHEN booking_type IN ('VIEW', 'WARR', 'BW') THEN TRUE END)::integer AS outcome
+          FROM records.jims_booking_charge_records
+         WHERE knowledge_date <@ daterange('{as_of_date}'::date, ('{as_of_date}'::date + interval '{label_timespan}')::date)
+         GROUP BY entity_id
+    include_missing_labels_in_train_as: False
+    name: 'booking_view_warr_bw_1y'
+
+# FEATURE GENERATION
+feature_aggregations:
+    -
+        prefix: 'events'
+        from_obj: |
+            (SELECT entity_id,
+                   knowledge_date,
+                   entity_info ->> 'zip_code' AS zip_code,
+                   source || event_type AS event_type
+              FROM semantic.events) AS events
+        knowledge_date_column: 'knowledge_date'
+        categoricals_imputation:
+            all:
+                type: 'zero_noflag'
+        categoricals:
+            - # counts of the different event types
+                column: event_type
+                choice_query: 'SELECT DISTINCT source || event_type FROM semantic.events'
+                metrics:
+                    - 'sum'
+        intervals:
+            - 1month
+            - 3month
+            - 6month
+            - '1y'
+            - '5y'
+        groups:
+            - 'entity_id'
+    -
+        prefix: 'protected_demographics'
+        from_obj: |
+            (SELECT entity_id,
+                    knowledge_date,
+                    event_type,
+                    entity_info ->> 'race' AS race
+                FROM semantic.events) AS protected_demographics
+        knowledge_date_column: 'knowledge_date'
+        categoricals_imputation:
+            all:
+                type: 'zero'
+        categoricals:
+            - # race
+                column: race
+                choice_query: SELECT DISTINCT entity_info ->> 'race' FROM semantic.events
+                metrics:
+                    - 'max'
+        intervals:
+            - 'all'
+        groups:
+            - 'entity_id'
+
+    -
+        prefix: 'demographics_person'
+        from_obj: |
+            (SELECT entity_id,
+                   knowledge_date,
+                   event_type,
+                   entity_info ->> 'sex' AS sex,
+                   (entity_info ->> 'age')::int AS event_age,
+                   (entity_info ->> 'date_of_birth')::date AS date_of_birth,
+                   entity_info ->> 'city' AS city,
+                   entity_info ->> 'zip_code' AS zip_code,
+                   (entity_info ->> 'homeless')::integer AS homeless,
+                   (entity_info->>'joco_resident')::integer AS joco_resident
+              FROM semantic.events) AS demographics_person
+        knowledge_date_column: 'knowledge_date'
+        categoricals_imputation:
+            all:
+                type: 'zero'
+        categoricals:
+            - # sex
+                column: sex
+                choices:
+                    - MALE
+                    - FEMALE
+                metrics: 
+                    - max
+
+        aggregates_imputation:
+            all:
+                type: 'mean'
+        aggregates:
+            - # age at first and last events
+                quantity: event_age
+                metrics: 
+                    - 'max'
+                    - 'min'
+            - # age at first booking event
+                quantity:
+                  bkg_age: CASE WHEN event_type = 'booking' THEN event_age ELSE NULL END
+                metrics:
+                  - min
+            - # age
+                quantity:
+                    age: extract(year FROM age('{collate_date}', date_of_birth))
+                metrics:
+                    - max
+            - # number of different cities lived in
+                quantity:
+                    num_cities: DISTINCT city
+                metrics:
+                    - count
+            - # number of different zip codes lived in
+                quantity:
+                    num_zips: DISTINCT zip_code
+                metrics:
+                    - count
+            - # ever been flagged homeless
+                quantity: homeless 
+                metrics:
+                    - max
+                imputation:
+                    all:
+                        type: 'zero'
+            - # any joco residency history, percent of events in joco (NOTE: ideally would have a "most recent" feature here instead)
+                quantity: joco_resident
+                metrics:
+                    - max
+                    - avg
+                imputation:
+                    all:
+                        type: 'zero_noflag'
+            - # days since last event (NOTE: all entities in cohort should have at least one event in their past!)
+                quantity:
+                    days_since_event: ('{collate_date}'::DATE - knowledge_date::DATE)
+                metrics:
+                    - min
+                imputation:
+                  all:
+                    type: 'error'
+            - # days since last booking (NOTE: all entities in cohort should have at least one booking in their past!)
+                quantity:
+                    days_since_booking: CASE WHEN event_type = 'booking' THEN '{collate_date}'::DATE - knowledge_date::DATE ELSE NULL END
+                metrics:
+                    - min
+                imputation:
+                  all:
+                    type: 'error'
+            - # days since last release (NOTE: all entities in cohort should have at least one release in their past!)
+                quantity:
+                    days_since_release: CASE WHEN event_type = 'release' THEN '{collate_date}'::DATE - knowledge_date::DATE ELSE NULL END
+                metrics:
+                    - min
+                imputation:
+                  all:
+                    type: 'error'
+
+        intervals:
+            - 'all'
+
+        groups:
+            - 'entity_id'
+    -
+        prefix: 'mh'
+        from_obj: |
+           (SELECT entity_id, knowledge_date, mh_flag
+              FROM semantic.events) AS mh
+        knowledge_date_column: knowledge_date
+        aggregates_imputation:
+            all:
+                type: zero_noflag
+        aggregates:
+            - # mental health flag
+                quantity: mh_flag
+                metrics:
+                    - sum
+                    - max
+                    - avg
+        intervals:
+            - all
+        groups:
+            - entity_id
+    -
+        prefix: 'dx'
+        from_obj: |
+            (SELECT entity_id,
+                   knowledge_date,
+                   left(diagnosis_dsm5_classification, 6) AS dsm5cat,
+                   days_since_last_diagnosis::int AS days_between,
+                   diagnosis_abuse::int AS abuse,
+                   diagnosis_drug::int AS drug
+              FROM records.jcmhc_diagnosis_records) AS dx
+        knowledge_date_column: 'knowledge_date'
+        categoricals_imputation:
+            all:
+                type: 'zero'
+        categoricals:
+            - # first 6 letters of dsm 5 classifications with at least 150 occurences
+                column: dsm5cat
+                choice_query: |
+                    SELECT DISTINCT left(class, 6)
+                      FROM (
+                               SELECT left(diagnosis_dsm5_classification, 6) AS class, 
+                                      count(*)
+                                 FROM records.jcmhc_diagnosis_records
+                                GROUP BY class
+                           ) AS class_counts
+                     WHERE count > 150
+                metrics: 
+                    - max
+                    - sum
+
+        aggregates_imputation:
+            all:
+                type: 'zero'
+        aggregates:
+            - # days_between_events
+                quantity: days_between
+                metrics: 
+                    - max
+                    - min
+                    - avg
+                imputation:
+                  all:
+                    type: 'mean'
+            - # diagnosis contains the word "abuse"
+                quantity: abuse
+                metrics:
+                    - max
+            - # diagnosis contain drug-related terms
+                quantity: drug
+                metrics:
+                    - max
+        intervals:
+            - 1y
+            - 2y
+            - 5y
+            - 'all'
+
+        groups:
+            - 'entity_id'
+
+    -
+        prefix: 'adm'
+        from_obj: |
+            (SELECT entity_id,
+                   knowledge_date,
+                   left(program, 15) AS program,
+                   days_since_last_admission::int AS days_between_adm
+              FROM records.jcmhc_admission_records) AS adm
+        knowledge_date_column: 'knowledge_date'
+        categoricals_imputation:
+            all:
+                type: 'zero'
+        categoricals:
+            - # first 15 letters of program description with at least 50 occurences
+                column: program
+                choice_query: |
+                    SELECT DISTINCT left(class, 15)
+                      FROM (
+                                SELECT left(program, 15) AS class, 
+                                       count(*)
+                                  FROM records.jcmhc_admission_records
+                                 GROUP BY class
+                           ) AS class_counts
+                     WHERE count > 50
+                metrics: 
+                    - max
+                    - sum
+
+        aggregates_imputation:
+            all:
+                type: 'mean'
+        aggregates:
+            - # days_between_events
+                quantity: days_between_adm
+                metrics: 
+                    - max
+                    - min
+                    - avg
+        intervals:
+            - 1y
+            - 2y
+            - 5y
+            - 'all'
+
+        groups:
+            - 'entity_id'
+
+    -
+        prefix: 'dch'
+        from_obj: |
+            (SELECT entity_id,
+                   knowledge_date,
+                   left(program, 15) AS program,
+                   left(regexp_replace(discharge_category, '[ -:]', ''), 15) AS dschg_cat,
+                   days_since_last_discharge::int AS days_between_dschg,
+                   days_in_program::int AS days_in_program
+              FROM records.jcmhc_discharge_records) AS dch
+        knowledge_date_column: 'knowledge_date'
+        categoricals_imputation:
+            all:
+                type: 'zero'
+        categoricals:
+            - # first 15 letters of program description with at least 50 occurences
+                column: program
+                choice_query: |
+                    SELECT DISTINCT left(class, 15)
+                      FROM (
+                               SELECT left(program, 15) AS class, 
+                                      count(*)
+                                 FROM records.jcmhc_discharge_records
+                                GROUP BY class
+                           ) AS class_counts
+                     WHERE count > 50
+                metrics: 
+                    - 'max'
+                    - sum
+            - # first 20 letters of discharge category with at least 50 occurences
+                column: dschg_cat
+                choice_query: |
+                    SELECT DISTINCT class
+                      FROM (
+                               SELECT left(regexp_replace(discharge_category, '[ -:]', ''), 15) AS class, 
+                                      count(*)
+                                FROM records.jcmhc_discharge_records
+                                GROUP BY class
+                           ) AS class_counts
+                     WHERE count > 50
+                metrics: 
+                    - max
+                    - sum
+
+        aggregates_imputation:
+            all:
+                type: 'zero'
+        aggregates:
+            - # days_between_events
+                quantity: days_between_dschg
+                metrics: 
+                    - max
+                    - min
+                    - avg
+                imputation:
+                    all:
+                        type: 'mean'
+            - # days_in_program
+                quantity: days_in_program
+                metrics: 
+                    - max
+                    - min
+                    - avg
+
+        intervals:
+            - 1y
+            - 2y
+            - 5y
+            - 'all'
+
+        groups:
+            - 'entity_id'
+
+    -
+        prefix: 'call'
+        from_obj: |
+            (SELECT entity_id,
+                   knowledge_date,
+                   left(call_type, 2) AS call_type,
+                   left(unit, 1) AS unit,
+                   left(presenting_issue, 6) AS presenting_issue,
+                   left(degree_of_risk, 10) AS degree_of_risk,
+                   left(disposition, 28) AS disposition,
+                   days_since_last_call::int AS days_since_last_call
+              FROM records.jcmhc_call_records) AS call
+        knowledge_date_column: 'knowledge_date'
+        categoricals_imputation:
+            all:
+                type: 'zero'
+        categoricals:
+            - # first 2 letters of unit, no size limit as there are only 3
+                column: call_type
+                choice_query: |
+                    SELECT left(call_type, 2) AS class
+                    FROM records.jcmhc_call_records
+                    GROUP BY class
+                          
+                metrics: 
+                    - max
+                    - sum
+            - # first letter of call unit, no size limit as there are only 2
+                column: unit
+                choice_query: |
+                    SELECT left(unit, 1) AS class
+                    FROM records.jcmhc_call_records
+                    GROUP BY class
+                           
+                metrics: 
+                    - max
+                    - sum
+
+            - # first 6 letters of service description with at least 200 occurences
+                column: presenting_issue
+                choice_query: |
+                    SELECT DISTINCT left(class, 6)
+                      FROM (SELECT left(presenting_issue, 6) AS class, 
+                                      count(*)
+                                FROM records.jcmhc_call_records
+                                GROUP BY class
+                           ) AS class_counts
+                     WHERE count > 200
+                metrics: 
+                    - max
+                    - sum
+
+            - # first 10 letters of degree of risk, no size limit as NULL is the most common value
+                column: degree_of_risk
+                choice_query: |
+                    SELECT left(degree_of_risk, 10) AS class
+                    FROM records.jcmhc_call_records
+                    GROUP BY class
+                metrics: 
+                    - max
+                    - sum
+
+            - # first 28 letters of disposition with at least 150 occurences
+                column: disposition
+                choice_query: |
+                    SELECT DISTINCT left(class, 28)
+                      FROM (SELECT left(disposition, 28) AS class, 
+                                      count(*)
+                                FROM records.jcmhc_call_records
+                                GROUP BY class
+                           ) AS class_counts
+                     WHERE count > 150
+                metrics: 
+                    - max
+                    - sum
+
+        aggregates_imputation:
+            all:
+                type: 'zero'
+        aggregates:
+            - # days_since_last_call
+                quantity: days_since_last_call
+                metrics: 
+                    - max
+                    - min
+                    - avg
+
+        intervals:
+            - 1y
+            - 2y
+            - 5y
+            - 'all'
+
+        groups:
+            - 'entity_id'
+
+    -
+        prefix: 'svcs'
+        from_obj: |
+            (SELECT entity_id,
+                   knowledge_date,
+                   service,
+                   left(service_group, 10) AS service_group,
+                   days_since_last_dos::int AS days_since_last_dos
+              FROM records.jcmhc_service_records) AS svcs
+             
+        knowledge_date_column: 'knowledge_date'
+        categoricals_imputation:
+            all:
+                type: 'mean'
+        categoricals:
+            - # first 10 letters of service_group with at least 500 occurences
+                column: service_group
+                choice_query: |
+                    SELECT DISTINCT left(class, 10)
+                      FROM (
+                               SELECT left(service_group, 10) AS class, 
+                                      count(*)
+                                 FROM records.jcmhc_service_records
+                                GROUP BY class
+                           ) AS class_counts
+                     WHERE count > 500
+                metrics: 
+                    - max
+                    - sum
+
+        aggregates_imputation:
+            all:
+                type: 'mean'
+        aggregates:
+            - # days_between_events
+                quantity: days_since_last_dos
+                metrics: 
+                    - max
+                    - min
+                    - avg
+
+        intervals:
+            - 1y
+            - 2y
+            - 5y
+            - 'all'
+
+        groups:
+            - 'entity_id'
+
+    -
+        prefix: 'bjmhs'
+        from_obj: |
+            (SELECT entity_id,
+                   knowledge_date,
+                   days_since_last_booking::int AS days_between_bookings,
+                   days_since_last_release::int AS days_between_release_and_booking,
+                   bjmhs1::int AS bjmhs1,
+                   bjmhs2::int AS bjmhs2,
+                   bjmhs3::int AS bjmhs3,
+                   bjmhs4::int AS bjmhs4,
+                   bjmhs5::int AS bjmhs5,
+                   bjmhs6::int AS bjmhs6,
+                   bjmhs7::int AS bjmhs7,
+                   bjmhs8::int AS bjmhs8,
+                   bjmhs_total::int AS bjmhs_total,
+                   bjmhs_referred::int AS bjmhs_referred,
+                   mh_flag::smallint AS mh_flag
+              FROM records.jims_booking_records) AS booking
+        knowledge_date_column: 'knowledge_date'
+        aggregates_imputation:
+            all:
+                type: 'zero'
+        aggregates:
+            - # bjmhs1
+                quantity: bjmhs1
+                metrics:
+                    - max
+                    - sum
+            - # bjmhs2
+                quantity: bjmhs2
+                metrics:
+                    - max
+                    - sum
+            - # bjmhs3
+                quantity: bjmhs3
+                metrics:
+                    - max
+                    - sum
+            - # bjmhs4
+                quantity: bjmhs4
+                metrics:
+                    - max
+                    - sum
+            - # bjmhs5
+                quantity: bjmhs5
+                metrics:
+                    - max
+                    - sum
+            - # bjmhs6
+                quantity: bjmhs6
+                metrics:
+                    - max
+                    - sum
+            - # bjmhs7
+                quantity: bjmhs7
+                metrics:
+                    - max
+                    - sum
+            - # bjmhs8
+                quantity: bjmhs8
+                metrics:
+                    - max
+                    - sum
+            - # bjmhs_total
+                quantity: bjmhs_total
+                metrics:
+                    - max
+            - # mh_flag
+                quantity: mh_flag
+                metrics:
+                    - max
+            - # days between bookings (max in data is 11,030 so impute to 15,000 for "no previous")
+                quantity: days_between_bookings
+                metrics:
+                    - max
+                    - min
+                    - avg
+                    - stddev
+                imputation:
+                    stddev:
+                        type: 'zero'
+                    all:
+                        type: 'constant'
+                        value: 15000
+            - # days between release and next booking (max in data is 11,030 so impute to 15,000 for "no previous")
+                quantity: days_between_release_and_booking
+                metrics:
+                    - max
+                    - min
+                    - avg
+                    - stddev
+                imputation:
+                    stddev:
+                        type: 'zero'
+                    all:
+                        type: 'constant'
+                        value: 15000
+
+        intervals:
+            - 1y
+            - 2y
+            - 5y
+            - 'all'
+
+        groups:
+            - 'entity_id'
+
+    -
+        prefix: 'jail_days'
+        from_obj: |
+            (SELECT entity_id,
+                   knowledge_date,
+                   CASE WHEN ch.booking_no IS NOT NULL THEN 1 ELSE 0 END AS wknd_flag,
+                   days_in_jail::INT AS days_in_jail
+              FROM records.jims_release_records
+              LEFT JOIN (SELECT DISTINCT booking_no FROM records.jims_booking_charge_records WHERE booking_type = 'WKND') ch USING(booking_no)
+              ) AS release
+        # NOTE: strictly speaking this is "days in jail at time of release"; a jail stay that spans one of the
+        #       interval cut-offs won't get counted in the smaller interval as the logic for this would be much
+        #       more complicated (but should maybe revisit if this feature is particularl predictive)
+        knowledge_date_column: 'knowledge_date'
+        # missingness means no releases in that time period, so fill with 0 (not imputation)
+        aggregates_imputation:
+            all:
+                type: 'zero_noflag'
+        aggregates:
+            - # days in jail on non-weekend bookings (add 1 since booking and release on same day counted as 0)
+                quantity: 
+                  bkg_days_in_jail: CASE WHEN wknd_flag = 0 THEN days_in_jail + 1 ELSE NULL END
+                metrics:
+                    - max
+                    - min
+                    - avg
+                    - sum
+            - # count "days in jail" on weekend bookings separately (add 1 since booking and release on same day counted as 0)
+                quantity:
+                  wknd_days_in_jail: CASE WHEN wknd_flag = 1 THEN days_in_jail + 1 ELSE NULL END
+                metrics:
+                    - max
+                    - min
+                    - avg
+                    - sum
+
+        intervals:
+            - 1y
+            - 2y
+            - 5y
+            - 'all'
+
+        groups:
+            - 'entity_id'
+
+    -
+        prefix: 'bkg_charge'
+        from_obj: |
+            (SELECT entity_id,
+                   knowledge_date,
+                   booking_type,
+                   charge_type,
+                   charge_chapter
+              FROM records.jims_booking_charge_records) AS charges
+             
+        knowledge_date_column: 'knowledge_date'
+        categoricals_imputation:
+            all:
+                type: 'null_category'
+        categoricals:
+            - # booking types
+                column: booking_type
+                choice_query: |
+                    SELECT DISTINCT booking_type
+                      FROM records.jims_booking_charge_records
+                metrics: 
+                    - max
+                    - sum
+            - # charge types (e.g., misdemeanor / felony / etc)
+                column: charge_type
+                choice_query: |
+                    SELECT DISTINCT charge_type
+                      FROM records.jims_booking_charge_records
+                metrics: 
+                    - max
+                    - sum
+            - # charge chapters (with at least 50 occurances)
+                column: charge_chapter
+                choice_query: |
+                    SELECT DISTINCT charge_chapter
+                      FROM (
+                               SELECT charge_chapter, 
+                                      count(*)
+                                FROM records.jims_booking_charge_records
+                                GROUP BY charge_chapter
+                           ) AS chapter_counts
+                     WHERE count > 50
+                metrics: 
+                    - max
+                    - sum
+
+        intervals:
+            - 1y
+            - 2y
+            - 5y
+            - 'all'
+
+        groups:
+            - 'entity_id'
+
+    -
+        prefix: 'lsir'
+        from_obj: |
+            (SELECT entity_id,
+                   knowledge_date,
+                   mh_flag::int as mh_flag,
+                   alcohol_ever::int as alcohol_ever,
+                   drug_ever::int as drug_ever,
+                   alcohol_current::int as alcohol_current,
+                   drug_current::int as drug_current,
+                   law_violations::int as law_violations,
+                   marital_fam::int as marital_fam,
+                   school_work::int as school_work,
+                   medical::int as medical,
+                   other::int as other,
+                   moderate_interference::int as moderate_interference,
+                   severe_psychosis::int as severe_psychosis,
+                   mh_past::int as mh_past,
+                   mh_current::int as mh_current,
+                   psych_assess::int as psych_assess,
+                   total_score::int AS total_score,
+                   left(cls, 3) AS cls
+              FROM records.jims_lsir_records) AS lsir
+             
+        knowledge_date_column: 'knowledge_date'
+        categoricals_imputation:
+            all:
+                type: 'zero'
+        categoricals:
+            - # first 10 letters of service_group with at least 500 occurences
+                column: cls
+                choice_query: |
+                    SELECT DISTINCT left(class, 3)
+                      FROM (
+                               SELECT left(cls, 3) AS class, 
+                                      count(*)
+                                FROM records.jims_lsir_records
+                                GROUP BY class
+                           ) AS class_counts
+                     WHERE count > 50
+                metrics: 
+                    - max
+                    - sum
+
+        aggregates_imputation:
+            all:
+                type: 'zero'
+        aggregates:
+            - # mh_flag
+                quantity: mh_flag
+                metrics: 
+                    - max
+            - # Question 37: Alcohol problem, ever
+                quantity: alcohol_ever
+                metrics: 
+                    - max
+            - # Question 38: Drug problem, ever
+                quantity: drug_ever
+                metrics: 
+                    - max
+            - # Question 39: Alcohol problem, currently
+                quantity: alcohol_current
+                metrics: 
+                    - max
+            - # Question 40: Drug problem, currently
+                quantity: drug_current
+                metrics: 
+                    - max
+            - # Question 41: Law violations
+                quantity: law_violations
+                metrics: 
+                    - max
+            - # Question 42: Marital/family
+                quantity: marital_fam
+                metrics: 
+                    - max
+            - # Question 43: School/work issues
+                quantity: school_work
+                metrics: 
+                    - max
+            - # Question 44: Medical issues
+                quantity: medical
+                metrics: 
+                    - max
+            - # Question 45: Other
+                quantity: other
+                metrics: 
+                    - max
+            - # Question 46: Moderate interference
+                quantity: moderate_interference
+                metrics: 
+                    - max
+            - # Question 47: Severe interference, active psychosis
+                quantity: severe_psychosis
+                metrics: 
+                    - max
+            - # Question 48: MH treatment, past
+                quantity: mh_past
+                metrics: 
+                    - max
+            - # Question 49: MH treatment, current
+                quantity: mh_current
+                metrics: 
+                    - max
+            - # Question 50: Psychological assessment indicated
+                quantity: psych_assess
+                metrics: 
+                    - max
+            - # total score
+                quantity: total_score
+                metrics: 
+                    - max
+
+        intervals:
+            - 1y
+            - 2y
+            - 5y
+            - 'all'
+
+        groups:
+            - 'entity_id'
+
+    -
+        prefix: 'medact'
+        from_obj: |
+            (SELECT entity_id,
+                   knowledge_date,
+                   incident_end_time::time as incident_end_time,
+                   CASE WHEN incident_end_time::time < '6:00:00' THEN 1 else 0 end as overnight,
+                   CASE WHEN incident_end_time::time >= '6:00:00' AND 
+                             incident_end_time::time < '12:00:00' THEN 1 else 0 end as morning,
+                   CASE WHEN incident_end_time::time >= '12:00:00' AND 
+                             incident_end_time < '18:00:00' THEN 1 else 0 end as afternoon,
+                   CASE WHEN incident_end_time::time >= '18:00:00' THEN 1 else 0 end as night,
+                   minutes_to_arrive::int as minutes_to_arrive,
+                   minutes_arrival_to_end::int as minutes_arrival_to_end,
+                   total_incident_minutes::int as total_incident_minutes,
+                   left(primaryimpression, 13) as primaryimpression,
+                   left(secondaryimpression, 13) as secondaryimpression,
+                   left(disposition, 25) as disposition,
+                   treated::smallint AS treated,
+                   transported::smallint AS transported,
+                   days_since_last_incident::int AS days_since_last_incident,
+                   mh_flag::smallint AS mh_flag
+             FROM records.medact_incident_records) AS medact
+        knowledge_date_column: 'knowledge_date'
+        categoricals_imputation:
+            all:
+                type: 'zero'
+        categoricals:
+            - # first 13 letters of primaryimpression with at least 50 occurences
+                column: primaryimpression
+                choice_query: |
+                    SELECT DISTINCT left(class, 13)
+                      FROM (
+                             SELECT left(primaryimpression, 13) AS class, 
+                                    count(*)
+                              FROM records.medact_incident_records
+                              GROUP BY class
+                           ) AS class_counts
+                     WHERE count > 50
+                metrics: 
+                    - sum
+
+            - # first 13 letters of secondaryimpression with at least 50 occurences
+                column: secondaryimpression
+                choice_query: |
+                    SELECT DISTINCT left(class, 13)
+                      FROM (
+                             SELECT left(secondaryimpression, 13) AS class, 
+                                    count(*)
+                              FROM records.medact_incident_records
+                              GROUP BY class
+                           ) AS class_counts
+                     WHERE count > 50
+                metrics: 
+                    - sum
+
+            - # first 25 letters of disposition with at least 50 occurences
+                column: disposition
+                choice_query: |
+                    SELECT DISTINCT left(class, 25)
+                      FROM (
+                            SELECT left(disposition, 25) AS class, 
+                                  count(*)
+                            FROM records.medact_incident_records
+                            GROUP BY class
+                           ) AS class_counts
+                     WHERE count > 50
+                metrics: 
+                    - sum
+
+        aggregates_imputation:
+            all:
+                type: 'zero'
+        aggregates:
+            - # treated
+                quantity: treated
+                metrics: 
+                    - avg
+            - # transported
+                quantity: transported
+                metrics: 
+                    - avg
+            - # total_incident_minutes
+                quantity: total_incident_minutes
+                metrics: 
+                    - max
+                    - min
+                    - avg
+            - # days_since_last_incident
+                quantity: days_since_last_incident
+                metrics: 
+                    - max
+                    - min
+                    - avg
+            - # mh_flag
+                quantity: mh_flag
+                metrics: 
+                    - max
+            - # overnight
+                quantity: overnight
+                metrics: 
+                    - min
+                    - max
+            - # morning
+                quantity: morning
+                metrics: 
+                    - min
+                    - max
+            - # afternoon
+                quantity: afternoon
+                metrics: 
+                    - min
+                    - max
+            - # night
+                quantity: night
+                metrics: 
+                    - min
+                    - max
+
+        intervals:
+            - 1y
+            - 2y
+            - 5y
+            - 'all'
+
+        groups:
+            - 'entity_id'
+
+
+# FEATURE GROUPING
+feature_group_definition:
+    prefix: ['events', 'demographics_person', 'mh', 'dx', 'adm', 'dch', 'call', 'svcs', 'bjmhs', 'lsir', 'medact', 'jail_days', 'bkg_charge']
+
+feature_group_strategies: ['all']
+
+# USER METADATA
+# The run.py script will automatically populate the matchdatetime
+user_metadata:
+    matchdatetime:
+
+# MODEL GROUPING (optional)
+model_group_keys:
+    - 'class_path'
+    - 'parameters'
+    - 'feature_names'
+    - 'feature_groups'
+    - 'cohort_name'
+    - 'state'
+    - 'label_name'
+    - 'label_timespan'
+    - 'training_as_of_date_frequency'
+    - 'max_training_history'
+    - 'matchdatetime'
+
+# GRID CONFIGURATION
+grid_config:
+    'sklearn.tree.DecisionTreeClassifier':
+        criterion: ['gini', 'entropy']
+#        max_depth: [1, 2, 3]
+#        min_samples_split: [10, 50, 100]
+    'sklearn.dummy.DummyClassifier':
+        strategy: [most_frequent]
+
+#    'sklearn.ensemble.RandomForestClassifier':
+#        max_features: ['sqrt']
+#        criterion: ['gini', 'entropy']
+#        n_estimators: [100,1000,5000]
+#        min_samples_split: [10,25,100]
+#        class_weight: [~]
+#        max_depth: [5,10,50]
+#        n_jobs: [-1]
+    'triage.component.catwalk.estimators.classifiers.ScaledLogisticRegression':
+        'penalty': ['l1']
+        'C': [0.1]
+#    'triage.component.catwalk.estimators.classifiers.ScaledLogisticRegression':
+#        penalty: ['l1', 'l2']
+#        C: [0.001, 0.1, 1, 10]
+#        C: [1,10]
+#    'triage.component.catwalk.baselines.rankers.PercentileRankOneFeature':
+#        feature: [
+#            events_entity_id_1y_event_type_JIMSbooking_sum,
+#            events_entity_id_5y_event_type_JIMSbooking_sum
+#        ]
+#        descend: [False]
+#    'triage.component.catwalk.baselines.thresholders.SimpleThresholder':
+#        rules:
+#            - ['mh_entity_id_all_mh_flag_max == 1', 'events_entity_id_1month_event_type_JIMSrelease_sum > 0']
+#            - ['mh_entity_id_all_mh_flag_max == 1', 'events_entity_id_3month_event_type_JIMSrelease_sum > 0']
+#            - ['mh_entity_id_all_mh_flag_max == 1', 'events_entity_id_6month_event_type_JIMSrelease_sum > 0']
+#            - ['mh_entity_id_all_mh_flag_max == 1', 'events_entity_id_1y_event_type_JIMSrelease_sum > 0']
+#        logical_operator: ['and']
+
+# MODEL SCORING
+scoring:
+    sort_seed: 5
+    testing_metric_groups:
+        -
+            metrics: [precision@, recall@]
+            thresholds:
+                percentiles: [1, 2, 3, 4, 5, 6, 7, 8, 9, 
+                              10, 11, 12, 13, 14, 15, 16, 17, 18, 19,
+                              20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 
+                              30, 31, 32, 33, 34, 35, 36, 37, 38, 39, 
+                              40, 41, 42, 43, 44, 45, 46, 47, 48, 49,
+                              50, 51, 52, 53, 54, 55, 56, 57, 58, 59,
+                              60, 61, 62, 63, 64, 65, 66, 67, 68, 69,
+                              70, 71, 72, 73, 74, 75, 76, 77, 78, 79,
+                              80, 81, 82, 83, 84, 85, 86, 87, 88, 89,
+                              90, 91, 92, 93, 94, 95, 96, 97, 98, 99,
+                              100]
+                top_n: [100, 200, 500]
+    training_metric_groups:
+        -
+            metrics: [precision@, recall@]
+            thresholds:
+                percentiles: [1, 2, 3, 4, 5, 6, 7, 8, 9, 
+                              10, 11, 12, 13, 14, 15, 16, 17, 18, 19,
+                              20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 
+                              30, 31, 32, 33, 34, 35, 36, 37, 38, 39, 
+                              40, 41, 42, 43, 44, 45, 46, 47, 48, 49,
+                              50, 51, 52, 53, 54, 55, 56, 57, 58, 59,
+                              60, 61, 62, 63, 64, 65, 66, 67, 68, 69,
+                              70, 71, 72, 73, 74, 75, 76, 77, 78, 79,
+                              80, 81, 82, 83, 84, 85, 86, 87, 88, 89,
+                              90, 91, 92, 93, 94, 95, 96, 97, 98, 99,
+                              100]
+                top_n: [100, 200, 500]
+    subsets:
+        -
+            name: mh_flag_joco_resident
+            query: |
+                SELECT DISTINCT entity_id
+                FROM semantic.current_match_subset_ranges
+                WHERE '{as_of_date}'::DATE <@ subset_range
+                AND subset = 'MH History JoCo Resident'
+individual_importance:
+    methods: [] # empty list means don't calculate individual importances
+    n_ranks: 5

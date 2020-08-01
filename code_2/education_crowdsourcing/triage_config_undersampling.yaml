@@ -1,0 +1,666 @@
+config_version: 'v7'
+
+model_comment: 'all_features'
+
+random_seed: 23456789
+
+temporal_config:
+  feature_start_time: '2010-01-01'
+  feature_end_time: '2014-01-01'
+  label_start_time: 's2010-01-01'
+  label_end_time: '2014-01-01'
+  model_update_frequency: '2month'
+  max_training_histories: ['1y'] 
+  test_durations: ['6month']
+  training_as_of_date_frequencies: ['1day']
+  test_as_of_date_frequencies: ['1day']
+  label_timespans: ['4month']
+
+# All the projects that were posted yesterday (w.r.t as_of_date)
+cohort_config:
+  query: 
+    "
+      with cohort as
+      (
+        select 
+            projectid, 
+            total_price_excluding_optional_support as funding_requirement
+        from projects  
+        where 
+          date_posted = '{as_of_date}'::timestamp - interval '1d' 
+      )
+      select 
+        entity_id
+      from cohort join projectid_mapping using(projectid)
+    "
+  name: 'projects_posted_today'
+
+# Label: Will the project reveive 10% of the asking amount in 4 months?
+label_config:
+  query: |
+    with projectinfo as 
+    (
+      select projectid, total_price_excluding_optional_support as funding_requirement
+      from projects
+    ),
+    donationinfo as
+    (
+      select 
+      projectid, 
+      sum(donation_to_project) as sum_donations 
+      from donations 
+      where 
+        donation_timestamp < '{as_of_date}'::timestamp + interval '{label_timespan}'
+      group by projectid
+    ),
+    ids_to_map as 
+    (
+      select 
+        projectinfo.projectid, 
+        sum_donations,
+        funding_requirement,
+        ((donationinfo.sum_donations < 0.1 * projectinfo.funding_requirement)::bool)::integer as outcome
+      from projectinfo, donationinfo
+      where projectinfo.projectid = donationinfo.projectid
+    )
+    select 
+      entity_id, outcome
+    from projectid_mapping join ids_to_map using(projectid)
+
+  include_missing_labels_in_train_as: True
+
+feature_aggregations:
+  - # static features about projects
+    prefix: 'prstat'
+    from_obj: |
+      (select 
+        entity_id,
+        total_price_excluding_optional_support as funding_requirement, 
+        school_charter::integer,
+        school_nlns::integer,
+        school_kipp::integer,
+        school_magnet::integer,
+        school_year_round::integer,
+        teacher_teach_for_america::integer,
+        teacher_ny_teaching_fellow::integer,
+        primary_focus_area as prim,
+        secondary_focus_area as sec,
+        resource_type as resource,
+        students_reached,
+        grade_level as grade,
+        date_posted
+      from 
+        projects join projectid_mapping using(projectid)) as proj
+    knowledge_date_column: 'date_posted'
+    categoricals_imputation:
+      all:
+          type: 'null_category' 
+          # value: 'unknown'
+    categoricals:
+      - # the poverty level of the school
+          column: poverty
+          choices:
+            - 'high poverty'
+            - 'highest poverty'
+            - 'low poverty'
+            - 'moderate poverty'
+          metrics:
+            - 'max'
+      - # grade level of the students
+        column: grade
+        choices:
+          - 'Grades 6-8'
+          - 'Grades 3-5'
+          - 'Grades 9-12'
+          - 'Grades PreK-2'
+        metrics:
+          - 'max'
+      - # the focus area of the project
+        column: prim
+        choices:
+          - 'Health & Sports'
+          - 'Special Needs'
+          - 'Applied Learning'
+          - 'Math & Science'
+          - 'Music & The Arts'
+          - 'History & Civics'
+          - 'Literacy & Language'
+        metrics:
+          - 'max'
+      - # Secondary focus of the project
+        column: sec
+        choices:
+          - 'Health & Sports'
+          - 'Special Needs'
+          - 'Applied Learning'
+          - 'Math & Science'
+          - 'Music & The Arts'
+          - 'History & Civics'
+          - 'Literacy & Language'
+        metrics:
+          - 'max'
+      - # Resource type to be obtained
+        column: resource
+        choices:
+          - Other
+          - Visitors
+          - Books
+          - Trips
+          - Supplies
+          - Technology
+        metrics:
+          - 'max'
+    aggregates_imputation:
+      all:
+        type: 'constant'
+        value: '0'
+    aggregates:
+      - # Funding requirement of the project
+        quantity: funding_requirement
+        metrics:
+          - 'max'
+      - # No. of students reached
+        quantity: students_reached
+        metrics:
+          - 'max'    
+    intervals: ['1d']
+    groups:
+      - 'entity_id'
+
+  - # dynamic features about donations
+    prefix: "dnstat"
+    from_obj: |
+      (
+        select
+        entity_id,
+        schoolid,
+        school_zip,
+        school_city,
+        school_state,
+        school_district,
+        primary_focus_subject,
+        primary_focus_area,
+        resource_type,
+        teacher_acctid,
+        grade_level,
+        donation_to_project as donation,
+        donation_timestamp
+        from projects
+        join donations using(projectid)
+        join projectid_mapping using(projectid)
+      ) AS dnstat
+    knowledge_date_column: 'donation_timestamp'
+
+    aggregates_imputation:
+      all:
+        type: 'constant'
+        value: 0
+    
+    aggregates:
+      - # donations so far
+        quantity: donation
+        metrics:
+          - sum
+          - avg
+          - count
+    intervals: ['all', '1week', '1month', '3month']
+    groups:
+      - 'entity_id'
+      - 'teacher_acctid'
+      - 'schoolid'
+      - 'school_district'
+      - 'primary_focus_subject'
+      - 'primary_focus_area'
+      - 'resource_type'
+      - 'grade_level'
+
+
+  - prefix: "posstat_1mo"
+    from_obj: |
+      (
+        select 
+        entity_id,
+        date_posted,
+        frac_teacher,
+        frac_school,
+        frac_district,
+        frac_city,
+        frac_state,
+        frac_pf,
+        frac_res,
+        frac_grade,
+        imp_teacher::integer,
+        imp_school::integer,
+        imp_district::integer,
+        imp_city::integer,
+        imp_state::integer,
+        imp_pf::integer,
+        imp_res::integer,
+        imp_grade::integer
+        from past_success_1month_2
+        join projectid_mapping using(projectid)
+      ) AS pastsuc1mo
+    knowledge_date_column: 'date_posted'
+
+    aggregates_imputation:
+      all:
+        type: 'constant'
+        value: 0    
+    aggregates:
+      - # successful projects by teacher
+        quantity: 'frac_teacher'
+        metrics:
+          - max
+      - # successful projects by school
+        quantity: 'frac_school'
+        metrics:
+          - max
+      - # successful projects by district
+        quantity: 'frac_district'
+        metrics:
+          - max
+      - # successful projects by city
+        quantity: 'frac_city'
+        metrics:
+          - max
+      - # successful projects by state
+        quantity: 'frac_state'
+        metrics:
+          - max
+      - # successful projects by pf
+        quantity: 'frac_pf'
+        metrics:
+          - max
+      - # successful projects by res
+        quantity: 'frac_res'
+        metrics:
+          - max
+      - # successful projects by grade
+        quantity: 'frac_grade'
+        metrics:
+          - max
+
+      - # imputation variables
+        quantity: 'imp_teacher'
+        metrics:
+          - max
+      - # imp
+        quantity: 'imp_school'
+        metrics:
+          - max
+      - # imp
+        quantity: 'imp_district'
+        metrics:
+          - max
+      - # imp
+        quantity: 'imp_city'
+        metrics:
+          - max
+      - # imp
+        quantity: 'imp_state'
+        metrics:
+          - max
+      - #imp
+        quantity: 'imp_pf'
+        metrics:
+          - max
+      - #imp
+        quantity: 'imp_res'
+        metrics:
+          - max
+      - #imp
+        quantity: 'imp_grade'
+        metrics:
+          - max
+      
+    intervals: ['1d']
+    groups:
+      - 'entity_id'
+
+  - prefix: "posstat_3mo"
+    from_obj: |
+      (
+        select 
+        entity_id,
+        date_posted,
+        frac_teacher,
+        frac_school,
+        frac_district,
+        frac_city,
+        frac_state,
+        frac_pf,
+        frac_res,
+        frac_grade,
+        imp_teacher::integer,
+        imp_school::integer,
+        imp_district::integer,
+        imp_city::integer,
+        imp_state::integer,
+        imp_pf::integer,
+        imp_res::integer,
+        imp_grade::integer
+        from past_success_3month_2
+        join projectid_mapping using(projectid)
+      ) AS pastsuc3mo
+    knowledge_date_column: 'date_posted'
+
+    aggregates_imputation:
+      all:
+        type: 'constant'
+        value: 0    
+    aggregates:
+      - # successful projects by teacher
+        quantity: 'frac_teacher'
+        metrics:
+          - max
+      - # successful projects by school
+        quantity: 'frac_school'
+        metrics:
+          - max
+      - # successful projects by district
+        quantity: 'frac_district'
+        metrics:
+          - max
+      - # successful projects by city
+        quantity: 'frac_city'
+        metrics:
+          - max
+      - # successful projects by state
+        quantity: 'frac_state'
+        metrics:
+          - max
+      - # successful projects by pf
+        quantity: 'frac_pf'
+        metrics:
+          - max
+      - # successful projects by res
+        quantity: 'frac_res'
+        metrics:
+          - max
+      - # successful projects by grade
+        quantity: 'frac_grade'
+        metrics:
+          - max
+
+      - # imputation variables
+        quantity: 'imp_teacher'
+        metrics:
+          - max
+      - # imp
+        quantity: 'imp_school'
+        metrics:
+          - max
+      - # imp
+        quantity: 'imp_district'
+        metrics:
+          - max
+      - # imp
+        quantity: 'imp_city'
+        metrics:
+          - max
+      - # imp
+        quantity: 'imp_state'
+        metrics:
+          - max
+      - #imp
+        quantity: 'imp_pf'
+        metrics:
+          - max
+      - #imp
+        quantity: 'imp_res'
+        metrics:
+          - max
+      - #imp
+        quantity: 'imp_grade'
+        metrics:
+          - max
+      
+    intervals: ['1d']
+    groups:
+      - 'entity_id'
+
+  - prefix: "posstat_6mo"
+    from_obj: |
+      (
+        select 
+        entity_id,
+        date_posted,
+        frac_teacher,
+        frac_school,
+        frac_district,
+        frac_city,
+        frac_state,
+        frac_pf,
+        frac_res,
+        frac_grade,
+        imp_teacher::integer,
+        imp_school::integer,
+        imp_district::integer,
+        imp_city::integer,
+        imp_state::integer,
+        imp_pf::integer,
+        imp_res::integer,
+        imp_grade::integer
+        from past_success_6month_2
+        join projectid_mapping using(projectid)
+      ) AS pastsuc6mo
+    knowledge_date_column: 'date_posted'
+
+    aggregates_imputation:
+      all:
+        type: 'constant'
+        value: 0    
+    aggregates:
+      - # successful projects by teacher
+        quantity: 'frac_teacher'
+        metrics:
+          - max
+      - # successful projects by school
+        quantity: 'frac_school'
+        metrics:
+          - max
+      - # successful projects by district
+        quantity: 'frac_district'
+        metrics:
+          - max
+      - # successful projects by city
+        quantity: 'frac_city'
+        metrics:
+          - max
+      - # successful projects by state
+        quantity: 'frac_state'
+        metrics:
+          - max
+      - # successful projects by pf
+        quantity: 'frac_pf'
+        metrics:
+          - max
+      - # successful projects by res
+        quantity: 'frac_res'
+        metrics:
+          - max
+      - # successful projects by grade
+        quantity: 'frac_grade'
+        metrics:
+          - max
+
+      - # imputation variables
+        quantity: 'imp_teacher'
+        metrics:
+          - max
+      - # imp
+        quantity: 'imp_school'
+        metrics:
+          - max
+      - # imp
+        quantity: 'imp_district'
+        metrics:
+          - max
+      - # imp
+        quantity: 'imp_city'
+        metrics:
+          - max
+      - # imp
+        quantity: 'imp_state'
+        metrics:
+          - max
+      - #imp
+        quantity: 'imp_pf'
+        metrics:
+          - max
+      - #imp
+        quantity: 'imp_res'
+        metrics:
+          - max
+      - #imp
+        quantity: 'imp_grade'
+        metrics:
+          - max
+      
+    intervals: ['1d']
+    groups:
+      - 'entity_id'
+
+  - prefix: "text"
+    from_obj: |
+      (select
+        entity_id,
+        date_posted,
+        n_words as num_words,
+        n_unique as num_unique,
+        n_sentences as num_sentences,
+        n_chars as num_chars,
+        count_q as ctr_quest,
+        count_excl as ctr_excl,
+        avg_words as avg_num_words,
+        fk_readability as fk_read,
+        dc_readability as dc_read,
+        ari_readability as ari_read,
+        gf_readability as gf_read,
+        imp_readability::integer as imp_read,
+        imp_essay::integer as imp_essay
+      from essay_features
+        join projectid_mapping using (entity_id)
+        join projects using (projectid)) as essay_text
+    knowledge_date_column: 'date_posted'
+    aggregates_imputation:
+      all:
+        type: 'constant'
+        value: 0
+    aggregates:
+      - # num_words
+        quantity: num_words
+        metrics:
+          - max
+      - # num_unique
+        quantity: num_unique
+        metrics:
+          - max
+      - # num_sentences
+        quantity: num_sentences
+        metrics:
+          - max
+      - # num_chars
+        quantity: num_chars
+        metrics:
+          - max
+      - # count_q
+        quantity: ctr_quest
+        metrics:
+          - max
+      - # count_excl
+        quantity: ctr_excl
+        metrics:
+          - max
+      - # avg_words
+        quantity: avg_num_words
+        metrics:
+          - max
+      - # fk_read
+        quantity: fk_read
+        metrics:
+          - max
+      - # dc_read
+        quantity: dc_read
+        metrics:
+          - max
+      - # ari_read
+        quantity: ari_read
+        metrics:
+          - max
+      - # gf_read
+        quantity: gf_read
+        metrics:
+          - max
+      - # imputation readability
+        quantity: imp_read
+        metrics:
+          - max
+      - # imputation essay
+        quantity: imp_essay
+        metrics:
+          - max
+    intervals: ['1d']
+    groups:
+      - 'entity_id'
+
+feature_group_definition: 
+  prefix: ['prstat','dnstat','posstat_1mo','posstat_3mo','posstat_6mo','text']
+
+feature_group_strategies: ['all']
+
+grid_config:
+    'sklearn.dummy.DummyClassifier':
+        strategy: [most_frequent]
+
+    'sklearn.ensemble.RandomForestClassifier':
+        max_features: ['sqrt']
+        criterion: ['gini', 'entropy']
+        n_estimators: [100, 1000, 2000]
+        min_samples_split: [10, 50]
+        class_weight: [~]
+        max_depth: [10, 50, 100]
+        n_jobs: [-1]
+    
+    'sklearn.ensemble.AdaBoostClassifier':
+        n_estimators: [500, 1000]
+
+    'sklearn.ensemble.ExtraTreesClassifier':
+        n_estimators: [10, 50, 100]
+        max_depth: [20, 50, 100]
+        min_samples_split: [5, 25, 50]
+        criterion: ['entropy']
+        max_features: ['log2']
+        n_jobs: [-1]
+
+    'sklearn.tree.DecisionTreeClassifier':
+        max_depth: [10,20,50,100]
+        max_features: [~,'sqrt']
+        min_samples_split: [2,5,10,100,1000]
+        criterion: ['gini']
+
+    'triage.component.catwalk.estimators.classifiers.ScaledLogisticRegression':
+        C: [0.0001, 0.001, 0.01, 0.1, 1.0, 10.0]
+        penalty: ['l1', 'l2']
+
+scoring:
+  testing_metric_groups:
+    -
+        metrics: [precision@, recall@]
+        thresholds:
+          percentiles: [1, 2, 3, 5, 10, 15, 20, 25, 30, 35, 40, 45, 50, 60, 70, 80, 90, 100] # go to a 100
+          top_n: [1, 10, 100, 1000, 2500, 5000, 7500, 10000]
+
+    -
+        metrics: [roc_auc]
+
+  training_metric_groups:
+    -
+        metrics: [precision@]
+        thresholds:
+          percentiles: [1, 2, 3, 5, 10, 15, 20, 25, 30, 35, 40, 45, 50, 60, 70, 80, 90, 100] # go to a 100
+          top_n: [1, 10, 100, 1000, 2000, 5000, 10000]    
+
+individual_importance:
+    methods: [] # empty list means don't calculate individual importances
+    n_ranks: 1  

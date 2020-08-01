@@ -1,0 +1,10 @@
+experiment_hash: 'a33cbdb3208b0df5f4286237a6dbcf8f'
+orig_data_name: 'donors_original'
+dest_data_name: 'donors_undersampling'
+demo_table: 'bias_plevel_2way.entity_demos'
+demo_col: 'plevel_2way'
+demo_permutations: ['highest','not_highest']
+label: 'outcome'
+mode: 2
+N: 1
+ratio: 1
