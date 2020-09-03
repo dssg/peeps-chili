@@ -1,0 +1,8 @@
+experiment_hash: '8a70c9296c135c4d37798249d72d2911'
+orig_data_name: 'joco_original'
+dest_data_name: 'joco_both_sample_race'
+demo_table: 'hemank_bias_alternatives.currmatch_entity_demos'
+demo_col: 'race_2way'
+demo_permutations: ['White','NonWhite']
+label: 'booking_view_warr_bw_1y'
+N: 1
