@@ -1040,40 +1040,42 @@ model_group_keys:
 # GRID CONFIGURATION
 grid_config:
     'sklearn.tree.DecisionTreeClassifier':
-        criterion: ['gini', 'entropy']
-#        max_depth: [1, 2, 3]
-#        min_samples_split: [10, 50, 100]
+        criterion: ['entropy']
+        max_depth: [1, 2, 3]
+        min_samples_split: [10, 50, 100]
+    
     'sklearn.dummy.DummyClassifier':
         strategy: [most_frequent]
 
-#    'sklearn.ensemble.RandomForestClassifier':
-#        max_features: ['sqrt']
-#        criterion: ['gini', 'entropy']
-#        n_estimators: [100,1000,5000]
-#        min_samples_split: [10,25,100]
-#        class_weight: [~]
-#        max_depth: [5,10,50]
-#        n_jobs: [-1]
+    'sklearn.ensemble.RandomForestClassifier':
+        max_features: ['sqrt']
+        criterion: ['entropy']
+        n_estimators: [100,1000,5000]
+        min_samples_split: [10,25,100]
+        class_weight: [~]
+        max_depth: [5,10,50]
+        n_jobs: [-1]
+    
     'triage.component.catwalk.estimators.classifiers.ScaledLogisticRegression':
-        'penalty': ['l1']
-        'C': [0.1]
+        penalty: ['l1', 'l2']
+        C: [0.001, 0.01, 0.1, 1, 10]
 #    'triage.component.catwalk.estimators.classifiers.ScaledLogisticRegression':
 #        penalty: ['l1', 'l2']
 #        C: [0.001, 0.1, 1, 10]
 #        C: [1,10]
-#    'triage.component.catwalk.baselines.rankers.PercentileRankOneFeature':
-#        feature: [
-#            events_entity_id_1y_event_type_JIMSbooking_sum,
-#            events_entity_id_5y_event_type_JIMSbooking_sum
-#        ]
-#        descend: [False]
-#    'triage.component.catwalk.baselines.thresholders.SimpleThresholder':
-#        rules:
-#            - ['mh_entity_id_all_mh_flag_max == 1', 'events_entity_id_1month_event_type_JIMSrelease_sum > 0']
-#            - ['mh_entity_id_all_mh_flag_max == 1', 'events_entity_id_3month_event_type_JIMSrelease_sum > 0']
-#            - ['mh_entity_id_all_mh_flag_max == 1', 'events_entity_id_6month_event_type_JIMSrelease_sum > 0']
-#            - ['mh_entity_id_all_mh_flag_max == 1', 'events_entity_id_1y_event_type_JIMSrelease_sum > 0']
-#        logical_operator: ['and']
+    'triage.component.catwalk.baselines.rankers.PercentileRankOneFeature':
+        feature: [
+            events_entity_id_1y_event_type_JIMSbooking_sum,
+            events_entity_id_5y_event_type_JIMSbooking_sum
+        ]
+        descend: [False]
+    'triage.component.catwalk.baselines.thresholders.SimpleThresholder':
+        rules:
+            - ['mh_entity_id_all_mh_flag_max == 1', 'events_entity_id_1month_event_type_JIMSrelease_sum > 0']
+            - ['mh_entity_id_all_mh_flag_max == 1', 'events_entity_id_3month_event_type_JIMSrelease_sum > 0']
+            - ['mh_entity_id_all_mh_flag_max == 1', 'events_entity_id_6month_event_type_JIMSrelease_sum > 0']
+            - ['mh_entity_id_all_mh_flag_max == 1', 'events_entity_id_1y_event_type_JIMSrelease_sum > 0']
+        logical_operator: ['and']
 
 # MODEL SCORING
 scoring:
