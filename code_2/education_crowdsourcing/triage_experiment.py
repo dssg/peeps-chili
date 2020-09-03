@@ -65,7 +65,7 @@ def setup_experiment(experiment_config_file):
     cf = ntpath.basename(experiment_config_file)[0:10]
     data_folder = '/mnt/data/experiment_data/'
 
-    project_folder = os.path.join(data_folder, 'donors', 'donors_undersampling', 'undersampled_0')
+    project_folder = os.path.join(data_folder, 'donors', 'donors_both_sample_race', 'BOTH_sampled_over_0')
     print(project_folder)
 
     # create the folder
@@ -141,7 +141,7 @@ def visualize_timechop(config_file):
     user = getpass.getuser()
     cf = ntpath.basename(config_file)[0:10]
     data_folder = '/mnt/data/experiment_data/'
-    save_path = os.path.join(data_folder, 'donors', 'donors_undersampling', 'undersampled_0')
+    save_path = os.path.join(data_folder, 'donors', 'donors_original')
     
     visualize_chops(
         chopper=chopper,
@@ -157,7 +157,7 @@ if __name__ == '__main__':
             config_file, n_jobs 
         )
     )
-
+    
     run_exp(
         config_file, 
         plot_timechops=False, 

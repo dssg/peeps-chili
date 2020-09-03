@@ -18,55 +18,42 @@ temporal_config:
 
 # All the projects that were posted yesterday (w.r.t as_of_date)
 cohort_config:
-  query: 
-    "
+  query: |
       with cohort as
       (
         select 
             projectid, 
             total_price_excluding_optional_support as funding_requirement
-        from projects  
+            from projects
         where 
           date_posted = '{as_of_date}'::timestamp - interval '1d' 
       )
-      select 
-        entity_id
+      select entity_id
       from cohort join projectid_mapping using(projectid)
-    "
   name: 'projects_posted_today'
 
 # Label: Will the project reveive 10% of the asking amount in 4 months?
 label_config:
   query: |
-    with projectinfo as 
-    (
-      select projectid, total_price_excluding_optional_support as funding_requirement
-      from projects
-    ),
-    donationinfo as
-    (
-      select 
-      projectid, 
-      sum(donation_to_project) as sum_donations 
-      from donations 
-      where 
-        donation_timestamp < '{as_of_date}'::timestamp + interval '{label_timespan}'
-      group by projectid
-    ),
-    ids_to_map as 
-    (
-      select 
-        projectinfo.projectid, 
-        sum_donations,
-        funding_requirement,
-        ((donationinfo.sum_donations < 0.1 * projectinfo.funding_requirement)::bool)::integer as outcome
-      from projectinfo, donationinfo
-      where projectinfo.projectid = donationinfo.projectid
-    )
-    select 
-      entity_id, outcome
-    from projectid_mapping join ids_to_map using(projectid)
-
+      with projectinfo as 
+      (
+        select projectid, total_price_excluding_optional_support as funding_requirement
+        from projects
+        where date_posted = '{as_of_date}'::timestamp - interval '1d'
+      ),
+      donationinfo as
+      (
+        select 
+        projectid, 
+        ((sum(donation_to_project) < 0.1 * min(projectinfo.funding_requirement))::bool)::integer as outcome
+        from donations 
+        join projectinfo using (projectid)
+        where 
+          donation_timestamp < '{as_of_date}'::timestamp + interval '{label_timespan}'
+        group by projectid
+      )
+      select entity_id, outcome
+      from projectid_mapping join donationinfo using(projectid)
   include_missing_labels_in_train_as: True
 
 feature_aggregations:
@@ -616,7 +603,7 @@ grid_config:
     'sklearn.ensemble.RandomForestClassifier':
         max_features: ['sqrt']
         criterion: ['gini', 'entropy']
-        n_estimators: [100, 1000, 2000]
+        n_estimators: [100, 500, 1000]
         min_samples_split: [10, 50]
         class_weight: [~]
         max_depth: [10, 50, 100]
@@ -626,15 +613,15 @@ grid_config:
         n_estimators: [500, 1000]
 
     'sklearn.ensemble.ExtraTreesClassifier':
-        n_estimators: [10, 50, 100]
-        max_depth: [20, 50, 100]
+        n_estimators: [10, 50, 500]
+        max_depth: [50, 100]
         min_samples_split: [5, 25, 50]
         criterion: ['entropy']
         max_features: ['log2']
         n_jobs: [-1]
 
     'sklearn.tree.DecisionTreeClassifier':
-        max_depth: [10,20,50,100]
+        max_depth: [1,5,10,20,50,100]
         max_features: [~,'sqrt']
         min_samples_split: [2,5,10,100,1000]
         criterion: ['gini']
@@ -663,4 +650,4 @@ scoring:
 
 individual_importance:
     methods: [] # empty list means don't calculate individual importances
-    n_ranks: 1  
+    n_ranks: 1
