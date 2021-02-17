@@ -12,6 +12,21 @@ The Housing Safety project involved helping the Code Enforcement Office in the C
 ### Student Outcomes
 In the Student Outcomes project, we partnered with El Salvadar to help them target interventions for students at risk of dropping out of school each year. The repository from this project was made publicly available and contains a detailed overview of that work [here](https://github.com/dssg/El_Salvador_mined_education) and the code for the fairness-accuracy trade-off investigations can be found in [code/el_salvador](code/el_salvador).
 
-### Eduction Crowdfunding
+### Education Crowdfunding
 Because the data from these other projects cannot be publicly released, we have also been investigating these trade-offs in the context of a project based around data [made public by DonorsChoose in 2014](https://www.kaggle.com/c/kdd-cup-2014-predicting-excitement-at-donors-choose/data) to provide an example that can be more readily reproduced by other researchers. Code relating to this case study can be found in [code/education_crowdfunding](code/education_crowdfunding).
+
+
+## Replication with Public Data
+
+Although several of the datasets used for this work contain sensitive information and were made available under data use agreements that don't allow for public release, data from the Education Crowdfunding use case is publicly available. Replicating the analysis here with that dataset can be done with the following steps:
+1. Follow the instructions from the [dssg/donors-choose](https://github.com/dssg/donors-choose) github repo for obtaining and transforming the [DonorsChoose KDD cup 2014 dataset](https://www.kaggle.com/c/kdd-cup-2014-predicting-excitement-at-donors-choose/data) and running a grid of machine learning models
+  - The data should be loaded into a postgresql database (we have used postgres 11.8 in our work here) and the machine learning and disparity mitigating code here works with python 3.7 or higher
+  - Modeling makes use of our machine learning pipeline, [triage](https://github.com/dssg/donors-choose), to run sklearn models. See the [donors-choose requirements.txt](https://github.com/dssg/donors-choose/blob/master/requirements.txt) and [triage requirements](https://github.com/dssg/triage/tree/master/requirement) for specific versions. Following the installation instructions from the donors-choose repository will install all the necessary dependencies and should take less than an hour.
+  - This will produce a set of trained model objects stored on disk as well as predictions and validation results stored into the postgres database
+2. Install the requirements specific to the bias mitigation code with `pip install -r /code/education_crowdfunding/requirements.txt`
+3. Start a jupyter notebook server and copy the files from [/code/education_crowdfunding](/code/education_crowdfunding) into your notebook directory
+4. Follow the steps in [/code/education_crowdfunding/20200612_dc_figures.ipynb](/code/education_crowdfunding/20200612_dc_figures.ipynb) to run the bias mitigation and model selection analysis
+
+The modeling and analysis here have been performed on a server running Ubuntu 18.04, but should run on most linux-based systems. We would recommend running the models on a reasonably well-provisioned server, but on a typical desktop these could probably be expected to complete in 1-2 days. The bias mitigation and model selection analysis would likely require 30-90 minutes on a typical desktop.
+
 
