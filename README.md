@@ -18,7 +18,11 @@ Because the data from these other projects cannot be publicly released, we have 
 
 ## Replication with Public Data
 
-Although several of the datasets used for this work contain sensitive information and were made available under data use agreements that don't allow for public release, data from the Education Crowdfunding use case is publicly available. Replicating the analysis here with that dataset can be done with the following steps:
+Although several of the datasets used for this work contain sensitive information and were made available under data use agreements that don't allow for public release, data from the Education Crowdfunding use case is publicly available. 
+
+For a simple application of the methods discussed here on this dataset, take a look at [this interactive colab notebook](https://colab.research.google.com/github/dssg/fairness_tutorial/blob/master/notebooks/bias_reduction.ipynb), which we developed for part of our [FairML tutorial](https://dssg.github.io/fairness_tutorial/) presented at KDD 2020 and AAAI 2021.
+
+A more complete replication of the analysis here with the Education Crowdfunding dataset can be achieved with the following steps:
 1. Follow the instructions from the [dssg/donors-choose](https://github.com/dssg/donors-choose) github repo for obtaining and transforming the [DonorsChoose KDD cup 2014 dataset](https://www.kaggle.com/c/kdd-cup-2014-predicting-excitement-at-donors-choose/data) and running a grid of machine learning models
   - The data should be loaded into a postgresql database (we have used postgres 11.8 in our work here) and the machine learning and disparity mitigating code here works with python 3.7 or higher
   - Modeling makes use of our machine learning pipeline, [triage](https://github.com/dssg/donors-choose), to run sklearn models. See the [donors-choose requirements.txt](https://github.com/dssg/donors-choose/blob/master/requirements.txt) and [triage requirements](https://github.com/dssg/triage/tree/master/requirement) for specific versions. Following the installation instructions from the donors-choose repository will install all the necessary dependencies and should take less than an hour.
