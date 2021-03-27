@@ -1,6 +1,6 @@
 config_version: 'v7'
 
-model_comment: 'under_1_original_original'
+model_comment: 'decoupled_not_highest'
 
 random_seed: 23456789
 
@@ -27,14 +27,22 @@ cohort_config:
             from projects
         where 
           date_posted = '{as_of_date}'::timestamp - interval '1d' 
+      ),
+      entity_to_poverty_mapping as
+      (
+        select entity_id, plevel from hemank_bias_original.entity_demos3
       )
       select entity_id
       from cohort join projectid_mapping using(projectid)
-  name: 'projects_posted_today'
+      join entity_to_poverty_mapping using(entity_id)
+      where plevel = 'not_highest'
+
+  name: 'projects_posted_today_not_highest'
 
 # Label: Will the project reveive 10% of the asking amount in 4 months?
 label_config:
   query: |
+  
       with projectinfo as 
       (
         select projectid, total_price_excluding_optional_support as funding_requirement
@@ -604,8 +612,7 @@ grid_config:
 
     'sklearn.ensemble.RandomForestClassifier':
         max_features: ['sqrt']
-        criterion: ['gini', 'entropy']
-        #criterion: ['gini']
+        criterion: ['entropy']
         n_estimators: [100, 500, 1000]
         min_samples_split: [10, 50]
         class_weight: [~]
@@ -615,18 +622,8 @@ grid_config:
     'sklearn.ensemble.AdaBoostClassifier':
         n_estimators: [500, 1000]
 
-    #get rid of extratrees
-    'sklearn.ensemble.ExtraTreesClassifier':
-        n_estimators: [10, 50, 500]
-        max_depth: [50, 100]
-        min_samples_split: [5, 25, 50]
-        criterion: ['entropy']
-        max_features: ['log2']
-        n_jobs: [-1]
-
     'sklearn.tree.DecisionTreeClassifier':
         max_depth: [1,5,10,20,50,100]
-        max_features: [~,'sqrt']
         min_samples_split: [2,5,10,100,1000]
         criterion: ['gini']
 
