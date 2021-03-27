@@ -1,0 +1,16 @@
+experiment_hash: '9a555d12d41d2081bccb2817e9c386a5'
+model_group_id: 67
+multiplier: 10000000
+base_dir: '/mnt/data/experiment_data/joco'
+orig_data_name: 'joco_original'
+demo_table: 'hemank_bias_alternatives.currmatch_entity_demos'
+orig_demo_col: 'protected_demographics_entity_id_all_race_W_max'
+demo_col: 'race_2way'
+demo_permutations: ['White', 'NonWhite']
+label: 'booking_view_warr_bw_1y'
+
+sampling_config:
+  ratio_protected: 1
+  label_dis_within_protected: 'original'
+  label_dis_within_non_protected: 'original'
+  mode: 'under'

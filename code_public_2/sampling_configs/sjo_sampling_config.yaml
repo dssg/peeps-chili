@@ -1,0 +1,16 @@
+experiment_hash: ['9dcafc4760c3618bfae96a54a4359481']
+model_group_id: 1
+multiplier: 100000000
+base_dir: '/mnt/data/experiment_data/san_jose_housing'
+orig_data_name: 'original'
+demo_table: 'kit_bias_adj.entity_demos'
+orig_demo_col: ''
+demo_col: 'median_income'
+demo_permutations: ['under55k', 'over55k']
+label: 'any_serious_violation'
+
+sampling_config:
+  ratio_protected: 1
+  label_dis_within_protected: 'original'
+  label_dis_within_non_protected: 'original'
+  mode: 'under'
