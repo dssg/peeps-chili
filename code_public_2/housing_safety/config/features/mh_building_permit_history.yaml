@@ -1,0 +1,59 @@
+# This config contains code to generate features from the
+# mh_building_permit_history table. These features describe a parcel's
+# history of building permits (e.g., whether there were permits
+# for exterior improvements) and features for permits that have expired.
+- # features made from building permits
+    prefix: 'bldg_permits'
+    from_obj: 'staging.mh_building_permit_history'
+    knowledge_date_column: 'permit_knowledge_date'
+
+    # using zero_noflag for all imputations at the moment to replicate the
+    # behavior of old triage...
+    aggregates_imputation:
+        all:
+            type: 'zero_noflag'
+    categoricals_imputation:
+        all:
+            type: 'zero_noflag'
+
+    aggregates:
+        - # presence and number of building permits in past X years
+            quantity:
+                permit_flag: CASE WHEN folderrsn IS NOT NULL THEN 1 ELSE 0 END
+            metrics: ['max', 'sum']
+    categoricals:
+        - # high-level permit types
+            column: 'foldertype'
+            choice_query: 'SELECT DISTINCT foldertype FROM staging.mh_building_permit_history'
+            metrics: ['max', 'sum']
+        - # types of work being done
+            column: 'workcode'
+            choice_query: 'SELECT DISTINCT workcode FROM staging.mh_building_permit_history'
+            metrics: ['max', 'sum']
+        - # sub-type of work being done
+            column: 'subcode'
+            choice_query: 'SELECT DISTINCT subcode FROM staging.mh_building_permit_history'
+            metrics: ['max', 'sum']
+    intervals: ['5y', '10y', '15y', '20y']
+    groups: ['entity_id']
+- # features made from expired building permits (separated out so we can look at more recent intervals)
+    prefix: 'exp_bldg_permits'
+    from_obj: '(SELECT * FROM staging.mh_building_permit_history WHERE expiry_knowledge_date IS NOT NULL) AS exp'
+    knowledge_date_column: 'expiry_knowledge_date'
+
+    # using zero_noflag for all imputations at the moment to replicate the
+    # behavior of old triage...
+    aggregates_imputation:
+        all:
+            type: 'zero_noflag'
+    categoricals_imputation:
+        all:
+            type: 'zero_noflag'
+
+    aggregates:
+        - # presence and number of expired building permits in past X years
+            quantity:
+                expired_flag: CASE WHEN folderrsn IS NOT NULL THEN 1 ELSE 0 END
+            metrics: ['max', 'sum']
+    intervals: ['1y', '3y', '5y', '10y']
+    groups: ['entity_id']

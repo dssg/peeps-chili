@@ -1,0 +1,43 @@
+temporal_config:
+    beginning_of_time: '2000-01-01' # earliest date included in features
+    modeling_start_time: '2011-01-01' # earliest date in any model
+    modeling_end_time: '2017-01-01' # all dates in any model are < this date
+    update_window: '3month' # how frequently to retrain models
+    train_label_windows: ['1d']
+    test_label_windows: ['3months'] # how much time covered by labels
+    train_durations: ['1y', '6y'] # length of time included in a model
+    test_durations: ['1d'] # length of period to sample from in test set
+    train_example_frequency: '1d'
+    test_example_frequency: '1d' # how frequently to sample in the test set
+    user_metadata:
+        label_definition: 'any_serious_violation'
+
+# LABEL GENERATION
+events_table: 'staging.mh_events'
+
+# FEATURE GROUPING
+feature_group_definition:
+    tables:
+        - 'days_since_routine_entity_id'
+
+feature_group_strategies: ['all']
+
+model_group_keys:
+    - 'train_duration'
+    - 'label_window'
+    - 'example_frequency'
+    - 'label_definition'
+
+# GRID CONFIGURATION
+grid_config:
+    'custom_models.baselines.PercentileRankOneFeature':
+        descend: [False]
+
+# MODEL SCORING
+scoring:
+    metric_groups:
+        -
+            metrics: ['precision@', 'recall@', 'fpr@']
+            thresholds:
+                percentiles: [1.0, 2.0, 5.0, 10.0, 25.0]
+                top_n: [25, 75, 150, 300, 500, 1000, 1500]

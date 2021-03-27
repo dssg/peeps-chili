@@ -1,0 +1,10 @@
+- # Features for days since inspections and violations at property and blockgroup level
+    prefix: 'days_since_routine'
+    from_obj: 'staging.mh_days_since'
+    knowledge_date_column: 'as_of_date'
+    aggregates:
+        - # days since last routine inspection at property (case level, routine priority codes)
+            quantity: 'days_since_last_inspection_rou'
+            metrics: ['max']
+    intervals: ['1d']
+    groups: ['entity_id']

@@ -1,0 +1,74 @@
+- # features made from all inspection cases
+    prefix: 'insp_cases'
+    from_obj: |
+        (
+            SELECT *,
+                (
+                    outcome_date - LAG(outcome_date) OVER (
+                        PARTITION BY entity_id ORDER BY outcome_date
+                    )
+                )::INT as days_between_inspection_cases
+            FROM staging.mh_events
+        ) as inspection_cases
+    knowledge_date_column: 'outcome_date'
+
+    # using zero_noflag for all imputations at the moment to replicate the
+    # behavior of old triage...
+    aggregates_imputation:
+        all:
+            type: 'zero_noflag'
+    categoricals_imputation:
+        all:
+            type: 'zero_noflag'
+
+    aggregates:
+        - # whether there were any severe violations and their count
+            quantity: 
+                severe_vio: outcome
+            metrics: ['max', 'sum']
+        - # whether there were any inspection cases and their count
+            quantity:
+                insp_case_occ: "CASE WHEN outcome_date IS NOT NULL THEN 1 END"
+            metrics: ['max', 'sum']
+        - # days between inspection cases
+            quantity: 
+                days_btw_insp: days_between_inspection_cases
+            metrics: ['min', 'max', 'sum', 'avg', 'stddev']
+    intervals: ['1y', '2y', '5y', '10y', '20y']
+    groups: ['entity_id']
+- # typical case length and presence/number of currently open cases (only make much sense over long time window)
+    prefix: 'case_length'
+    from_obj: |
+        (
+            SELECT cr.*, cf.close_date::DATE AS close_date
+            FROM staging.mh_case_rollup cr
+            JOIN sj.casefile cf USING(case_no)
+        ) as all_cases
+    knowledge_date_column: 'case_date'
+
+    # using zero_noflag for all imputations at the moment to replicate the
+    # behavior of old triage...
+    aggregates_imputation:
+        all:
+            type: 'zero_noflag'
+    categoricals_imputation:
+        all:
+            type: 'zero_noflag'
+
+    aggregates:
+        - # average and max days previous cases were open (using collate_date if still open)
+            quantity: 
+                days_open: |
+                    LEAST( 
+                        (CASE WHEN close_date IS NOT NULL AND close_date <= '{collate_date}'::DATE 
+                                    THEN close_date 
+                              ELSE '{collate_date}'::DATE 
+                         END) - case_date::DATE, 
+                        1)
+            metrics: ['avg', 'max']
+        - # whether there are any cases that are currently open
+            quantity:
+                open_cases: "CASE WHEN close_date IS NULL OR close_date > '{collate_date}'::DATE THEN 1 ELSE 0 END"
+            metrics: ['max', 'sum']
+    intervals: ['20y']
+    groups: ['entity_id']

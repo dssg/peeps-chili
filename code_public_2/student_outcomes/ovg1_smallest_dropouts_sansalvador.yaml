@@ -1,0 +1,389 @@
+config_version: 'v7'
+
+model_comment: 'ovg_1_v2'
+
+temporal_config:
+    feature_start_time: '2009-01-01'
+    feature_end_time: '2018-01-01'
+
+    label_start_time: '2009-01-01'
+    label_end_time: '2018-01-01'
+  
+    model_update_frequency: '1y'
+    max_training_histories: ['1y']
+    test_durations: ['1y']
+    training_as_of_date_frequencies: ['2y']
+    test_as_of_date_frequencies: ['1y']
+    label_timespans: ['1y']
+    
+cohort_config:
+  query: |
+    with entity_ovg AS
+    (
+      select distinct(student)::int as entity_id, 
+      ovg::int as overage
+      from hl_filter_set.san_salvador_student_events fss
+      join bias_analysis_1year.entity_demos b
+      on b.entity_id = fss.student::int and 
+      b.as_of_date=fss.event_date
+      where event_date = '{as_of_date}'::date and 
+      length(student)>3 and length(student)<9
+    )
+    select distinct(entity_id)::int as entity_id
+    from entity_ovg where overage=1
+  name: 'student'
+
+  
+label_config:
+  query: |
+    with partitioned as (
+    select student, 
+    array_agg(distinct grado_code) as grado_codes, -- Aggregates of grado_codes and promotion_status within the year
+    array_agg(distinct promotion_status) as passed,
+    event_date,
+    case 
+        when 'GENERAL' = any(array_agg(bach_modalidad)) then 11  -- If the student is in any bachillerato general during the year, the final year is considered to be 11. This fails for students that are in General in 11, move to Vocacional in 11, and then dropout.
+        when ARRAY['TECNICO VOCACIONAL', 'APREMAT', 'PILET'] && array_agg(bach_modalidad) then 12  -- If the student is in any of the other types of bachillerato, the final year is 12.
+        else NULL::int end as final_bach_year,
+    lead(event_date) over (partition by student order by event_date) as next_year 
+    from hl_filter_set.san_salvador_student_events
+    group by student,  event_date)
+
+    select student::int as entity_id, event_date, grado_codes, passed, final_bach_year, next_year, case 
+      when event_date = to_date('2018-01-01', 'YYYY-MM-DD')
+      then 1
+      when next_year = event_date + interval '{label_timespan}'  -- If a student is present the next year, they did not drop out
+      then 0
+      when final_bach_year <= any(grado_codes) and 'passed' = any(passed)  -- If they reached the final year of bachillerato and they passed, they did not drop out
+      then 0
+      else 1 end as outcome
+      from partitioned
+      where length(student) > 3 and length(student) < 9 and event_date = '{as_of_date}'::date
+  
+  name: 'dropout'
+
+feature_aggregations:
+    -
+      prefix: 'overage'
+      from_obj: |
+        (with tmp as (select event_date - birth_date as age, student::int as entity_id, * from hl_filter_set.san_salvador_student_events where length(student) > 3 and length(student) < 9), 
+        overage as (select age - avg(age) over (PARTITION by grado_code) as ovg, entity_id, event_date, grado_code from tmp)
+        select entity_id, ovg, case when ovg > 2*stddev(ovg) over (PARTITION by grado_code) then 1 else 0 end as ovg_bool, event_date from overage) as ovgdata
+
+      knowledge_date_column: 'event_date'
+
+      aggregates_imputation:
+        all:
+            type: 'mean'
+
+      aggregates:
+        
+        - # raw overage 
+          quantity:
+            total: "ovg"
+          metrics:
+            - 'avg'
+            - 'max'
+            - 'sum'
+
+        - # overage_boolean 
+          quantity:
+            overage_bool: "ovg_bool"
+          metrics:
+            - 'avg'
+            - 'max'
+            - 'sum'
+
+      intervals: ['1y', '3y', '5y', 'all']
+
+      groups:
+        - 'entity_id'
+
+    -
+        prefix: 'repeater'
+        from_obj: |
+          (select student::int as entity_id, 
+          coalesce((extract(year from event_date)::int - extract(year from lag(event_date) over (PARTITION by student))::int) -
+          (grado_code - lag(grado_code) over (PARTITION by student)), 0) as repeats, event_date from hl_filter_set.san_salvador_student_events where length(student) > 3 and length(student) < 9) as repeater
+
+        knowledge_date_column: 'event_date'
+
+        aggregates_imputation:
+            all:
+              type: 'constant'
+              value: 0 
+
+        aggregates:
+          - # raw repeats
+            quantity:
+              total: "repeats"
+            metrics:
+              - 'sum'
+              - 'avg'
+              - 'max'
+
+          - # repeats_boolean
+            quantity:
+              repeats_bool: "case when repeats > 0 then 1 else 0 end"
+            metrics:
+              - 'sum'
+              - 'avg'
+              - 'max'
+
+        intervals: ['1y', '3y', '5y', 'all']
+
+        groups:
+          - 'entity_id'
+
+    -
+        prefix: 'rural'
+        from_obj: |
+          (select student::int as entity_id, event_date, school, code, rural from hl_filter_set.san_salvador_student_events left join cleaned."1_cleaned" on san_salvador_student_events.school = cleaned."1_cleaned".code 
+          and EXTRACT(year from san_salvador_student_events.event_date) = EXTRACT(year from lower(cleaned."1_cleaned".year_range)) where length(student) > 3 and length(student) < 9) as rural
+        
+        knowledge_date_column: 'event_date'
+
+        aggregates_imputation:
+             all:
+              type: 'constant'
+              value: 0  
+
+        aggregates:
+          - # rural_boolean
+            quantity:
+              rural_bool: "case when rural = 'rural' then 1 else 0 end"
+            metrics:
+              - 'sum'
+              - 'avg'
+              - 'max'
+
+        intervals: ['1y', '3y', '5y', 'all']
+
+        groups:
+          - 'entity_id'
+
+    -
+        prefix: 'events'
+        from_obj: |
+          (select student::int as entity_id, * from hl_filter_set.san_salvador_student_events where length(student) > 3 and length(student) < 9) as dropouts
+
+        knowledge_date_column: 'event_date'
+
+        aggregates_imputation:
+            all:
+              type: 'mean'
+
+        aggregates:
+          - # number of events
+            quantity:
+              total: "*"
+            metrics:
+              - 'count'
+
+        intervals: ['1y', '3y', '5y', 'all']
+
+
+        groups:
+          - 'entity_id'
+
+    -
+        prefix: 'dropout'
+        from_obj: |
+          (select student::int as entity_id, * from hl_filter_set.san_salvador_labels where length(student) > 3 and length(student) < 9) as dropouts
+        knowledge_date_column: 'event_date'
+
+        aggregates_imputation:
+            all:
+              type: 'mean'
+
+        aggregates:
+          - # number of dropouts
+            quantity:
+              dropout_total: label
+            metrics:
+              - 'sum'
+              - 'avg'
+
+        intervals: ['5y', 'all']
+
+        groups:
+          - 'entity_id'
+
+
+    -
+        prefix: 'gender'
+        from_obj: |
+          (select student::int as entity_id, * from hl_filter_set.san_salvador_student_events where length(student) > 3 and length(student) < 9) as dropouts
+
+        knowledge_date_column: 'event_date'
+
+        categoricals_imputation:
+            all:
+              type: 'mean'
+              
+        categoricals:
+            - # gender 
+                column: gender
+                choice_query: 'select distinct gender from semantic.events_student'
+                metrics:
+                    - 'sum'
+                    - 'avg'
+                    - 'max'
+
+        intervals: ['1y', 'all']
+
+        groups:
+            - 'entity_id'
+
+    -
+        prefix: 'commute'
+        from_obj: |
+          (select student::int as entity_id, * from hl_filter_set.san_salvador_student_events where length(student) > 3 and length(student) < 9) as dropouts
+
+        knowledge_date_column: 'event_date'
+
+        categoricals_imputation:
+            all:
+              type: 'mean'
+
+        categoricals:
+            -
+                column: commute
+                choice_query: 'select distinct commute from semantic.events_student'
+                metrics:
+                    - 'avg'
+                    - 'sum'
+
+        intervals: ['1y', '5y', 'all']
+
+        groups:
+            - 'entity_id'
+
+    -
+        prefix: 'illness'
+        from_obj: |
+          (select student::int as entity_id, * from hl_filter_set.san_salvador_student_events where length(student) > 3 and length(student) < 9) as dropouts
+
+        knowledge_date_column: 'event_date'
+
+        aggregates_imputation:
+            all:
+              type: 'mean'
+
+        aggregates:
+          - # illness
+              quantity:
+                illness_bool: "case when illness is null or illness = 'NINGUNA' then 0 else 1 end"
+              metrics:
+                  - 'avg'
+                  - 'sum'
+
+        intervals: ['1y', '3y', '5y', 'all']
+
+        groups:
+            - 'entity_id'
+
+    -
+        prefix: 'family'
+        from_obj: |
+          (select student::int as entity_id, * from hl_filter_set.san_salvador_student_events where length(student) > 3 and length(student) < 9) as dropouts
+          
+        knowledge_date_column: 'event_date'
+
+        aggregates_imputation:
+            all:
+              type: 'mean'
+
+        aggregates:
+          - # number of family members
+            quantity: 
+              family_members: family_members
+            metrics:
+              - 'avg'
+              - 'max'
+              - 'min'
+
+          - # father present
+            quantity: 
+              father: "case when father is not null then 1 else 0 end"
+            metrics:
+              - 'avg'
+              - 'sum'
+              - 'max'
+
+          - # mother present
+            quantity: 
+              mother: "case when mother is not null then 1 else 0 end"
+            metrics:
+              - 'avg'
+              - 'sum'
+              - 'max'
+
+          - # two parent
+            quantity: 
+              two_parent: "case when mother is not null and father is not null then 1 else 0 end"
+            metrics:
+              - 'avg'
+              - 'sum'
+              - 'max'
+
+          - # not parent responsible
+            quantity: 
+              not_parent_responsible: "case when responsable != mother and responsable != father then 1 else 0 end"
+            metrics:
+              - 'avg'
+              - 'sum'
+              - 'max'
+
+        intervals: ['1y', '5y', 'all']
+        groups:
+          - 'entity_id'
+
+feature_group_definition:
+  prefix: ['overage', 'repeater', 'rural', 'events', 'dropout', 'gender', 'commute', 'illness', 'family']
+
+feature_group_strategies: ['all']
+
+grid_config:
+    'sklearn.dummy.DummyClassifier':
+        strategy: [most_frequent]
+    
+    'sklearn.tree.DecisionTreeClassifier':
+        max_depth: [1,5,10,20,50,100]
+        max_features: [~,'sqrt']
+        min_samples_split: [2,5,10,100,1000]
+        criterion: ['gini']
+        
+    'sklearn.ensemble.ExtraTreesClassifier':
+        n_estimators: [100]
+        criterion: ['gini']
+        max_depth: [5,50]
+        max_features: ['sqrt']
+        n_jobs: [16]
+
+    'triage.component.catwalk.estimators.classifiers.ScaledLogisticRegression':
+        penalty: ['l1', 'l2']
+        C: [0.0001, 0.001, 0.1, 1, 10]
+
+scoring:
+   testing_metric_groups:
+       -
+          metrics: ['precision@', 'recall@']
+          thresholds:
+             percentiles: [1.0, 2.0, 3.0, 4.0, 5.0, 10, 15, 20, 25, 30, 35, 40, 45, 50, 55, 60, 65, 70, 75, 80, 85, 90, 95, 100]
+             top_n: [1, 5, 10, 35, 50, 300, 500, 1000, 5000, 10000, 25000]
+   
+   training_metric_groups:
+     -
+       metrics: [accuracy]
+     -
+       metrics: ['precision@', 'recall@']
+       thresholds:
+          percentiles: [1.0, 5.0, 10.0, 25.0, 50.0, 75.0, 100.0]
+          top_n: [1, 5, 10, 25, 50, 100, 150, 300, 500, 1000, 1500]
+
+individual_importance:
+    methods: [] # empty list means don't calculate individual importances
+    # methods: ['uniform']
+    n_ranks: 5
+

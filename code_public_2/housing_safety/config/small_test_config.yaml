@@ -1,0 +1,183 @@
+
+config_version: 'v7'
+
+random_seed: 112358
+
+# TIME SPLITTING
+# The time window to look at, and how to divide the window into
+# train/test splits
+temporal_config:
+    feature_start_time: '2000-01-01'
+    feature_end_time: '2017-06-01'
+    label_start_time: '2016-06-01'
+    label_end_time: '2017-06-01'
+    model_update_frequency: '3month'
+    training_as_of_date_frequencies: '3month'
+    test_as_of_date_frequencies: '1d'
+    max_training_histories: ['6y']
+    test_durations: '0d'
+    training_label_timespans: ['3month']
+    test_label_timespans: ['3month']
+
+
+    # Original config:
+    # In the original project, we sampled the training as_of_dates every day
+    # and took features as of that point, but with the shift to cohort tables
+    # I think getting the right set of entities for training (just inspected)
+    # and testing (all entities) will actually be too difficult and doing all
+    # entities every day would likely grow prohibitively large, so switching
+    # here to sampling every 3 months with all entities.
+
+    # beginning_of_time: '2000-01-01' # earliest date included in features
+    # modeling_start_time: '2011-01-01' # earliest date in any model
+    # modeling_end_time: '2017-06-01' # all dates in any model are < this date
+    # update_window: '3month' # how frequently to retrain models
+    # train_label_windows: ['1d']
+    # test_label_windows: ['3months'] # how much time covered by labels
+    # train_durations: ['1y', '2y', '3y'] # length of time included in a model
+    # test_durations: ['1d'] # length of period to sample from in test set
+    # train_example_frequency: '1d'
+    # test_example_frequency: '1d' # how frequently to sample in the test set
+    # user_metadata:
+    #     label_definition: 'any_serious_violation'
+
+# LABEL GENERATION
+# Information needed to generate labels
+#
+# An events table is expected, with the columns:
+#   entity_id - an identifier for which the labels are applied to
+#   outcome_date - The date at which some outcome was known
+#   outcome - A boolean outcome
+# These are used to generate appropriate labels for each train/test split
+# events_table: 'staging.mh_events'
+
+
+cohort_config:
+    query: |
+        select distinct entity_id 
+        from staging.master_building_permit 
+        where issuedate < '{as_of_date}'::DATE
+    name: 'current_properties'
+
+
+label_config:
+    query: |
+        select
+        entity_id,
+        MAX(outcome)::integer as outcome
+        from staging.mh_events
+        where '{as_of_date}'::DATE <= outcome_date
+            and outcome_date < '{as_of_date}'::timestamp + interval '{label_timespan}'
+            group by entity_id
+    #include_missing_labels_in_train_as: False
+    name: 'any_serious_violation'
+
+
+# FEATURE GROUPING
+# define how to group features and generate combinations
+# feature_group_definition allows you to create groups/subset of your features
+# by different criteria.
+# for instance, 'tables' allows you to send a list of collate feature tables
+# 'prefix' allows you to specify a list of feature name prefixes
+feature_group_definition:
+    tables:
+        # - 'permit_aggregation_imputed'
+        # - 'time_aggregation_imputed'
+        # - 'bldg_permits_aggregation_imputed'
+        # - 'exp_bldg_permits_aggregation_imputed'
+        # - 'acs_aggregation_imputed'
+        - 'days_since_aggregation_imputed'
+#         - 'citations_aggregation_imputed'
+#         - 'insp_cases_aggregation_imputed'
+#         - 'violations_aggregation_imputed'
+#         - 'all_violations_aggregation_imputed'
+#         - 'violation_cats_aggregation_imputed'
+#         - 'geo_mh_insp_aggregation_imputed'
+# #        - 'geo_all_violations_aggregation_imputed'
+#         - 'case_length_aggregation_imputed'
+#         - 'vio_length_aggregation_imputed'
+#         - 'dlnqt_mh_aggregation_imputed'
+#         - 'mh_frclsr_aggregation_imputed'
+#         - 'geo_frclsr_aggregation_imputed'
+#         - 'mh_sale_dates_aggregation_imputed'
+#         - 'house_prices_aggregation_imputed'
+
+# strategies for generating combinations of groups
+# available: all, leave-one-out, leave-one-in
+feature_group_strategies: ['all']
+
+# Can just use the defaults here now...
+# model_group_keys:
+#     - 'train_duration'
+#     - 'label_window'
+#     - 'example_frequency'
+#     - 'label_definition'
+
+# GRID CONFIGURATION
+# The classifier/hyperparameter combinations that should be trained
+#
+# Each top-level key should be a class name, importable from triage. sklearn is
+# available, and if you have another classifier package you would like available,
+# contribute it to requirements.txt
+#
+# Each lower-level key is a hyperparameter name for the given classifier, and
+# each value is a list of potential values. All possible combinations of
+# classifiers and hyperparameters are trained.
+grid_config:
+    'sklearn.tree.DecisionTreeClassifier':
+       criterion: ['gini', 'entropy']
+       max_depth: [1, 2, 3, 5, 10, 20, 50]
+       min_samples_split: [10, 20, 50, 100]
+#    'sklearn.ensemble.RandomForestClassifier':
+#        max_features: ['sqrt', 'log2']
+#        criterion: ['gini', 'entropy']
+#        n_estimators: [100, 1000, 5000]
+#        min_samples_split: [10, 20, 50, 100]
+#        max_depth: [2, 5, 10, 20, 50, 100]
+#        n_jobs: [20]
+#    'sklearn.ensemble.ExtraTreesClassifier':
+#        max_features: ['sqrt', 'log2']
+#        criterion: ['gini', 'entropy']
+#        n_estimators: [100, 1000, 5000]
+#        min_samples_split: [10, 20, 50, 100]
+#        max_depth: [2, 5, 10, 50, 100]
+#        n_jobs: [20]
+#    'triage.component.catwalk.estimators.classifiers.ScaledLogisticRegression':
+#        penalty: ['l1', 'l2']
+#        C: [0.001, 0.01, 0.1, 1, 10]
+    'triage.component.catwalk.baselines.rankers.PercentileRankOneFeature':
+        feature: [
+            days_since_entity_id_1d_days_since_last_inspection_rou_max
+        ]
+        descend: [False]
+#    'xgboost.sklearn.XGBClassifier':
+#        n_estimators: [1000, 5000, 10000]
+#        learning_rate: [0.02, 0.05, 0.1, .2]
+#        max_depth: [5, 10, 20, 50, 100]
+
+# MODEL SCORING
+# How metrics for each model are made and stored
+#
+# Each entry needs a list of one of the metrics defined in
+# triage.scoring.ModelScorer.available_metrics (contributions welcome!)
+# Depending on the metric, either thresholds or parameters
+#
+# Parameters specify any hyperparameters needed. For most metrics,
+# which are simply wrappers of sklearn functions, these
+# are passed directly to sklearn.
+#
+# Thresholds are more specific: The list is subset and only the
+# top percentile or top n entities are labeled as positive.
+scoring:
+    testing_metric_groups:
+        -
+            metrics: ['precision@', 'recall@', 'fpr@']
+            thresholds:
+                percentiles: [1.0, 2.0, 5.0, 10.0, 25.0]
+                top_n: [25, 75, 150, 300, 500, 1000, 1500]
+
+
+individual_importance:
+    methods: [] # empty list means don't calculate individual importances
+    # methods: ['uniform']
+    n_ranks: 5

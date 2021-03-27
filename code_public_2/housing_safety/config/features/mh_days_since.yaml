@@ -1,0 +1,55 @@
+- # Features for days since inspections and violations at property and blockgroup level
+    prefix: 'days_since'
+    from_obj: 'staging.mh_days_since'
+    knowledge_date_column: 'as_of_date'
+
+    # using zero_noflag for all imputations at the moment to replicate the
+    # behavior of old triage...
+    aggregates_imputation:
+        all:
+            type: 'zero_noflag'
+    categoricals_imputation:
+        all:
+            type: 'zero_noflag'
+
+    aggregates:
+        - # days since last inspection at property (at the case level)
+            quantity: 
+                last_insp_case: 'days_since_last_inspection_case'
+            metrics: ['max']
+        - # days since last routine inspection at property (case level, routine priority codes)
+            quantity: 
+                last_insp_rou: 'days_since_last_inspection_rou'
+            metrics: ['max']
+        - # days since last closed case at property (at the case level)
+            quantity: 
+                last_case_closed: 'days_since_last_case_closed'
+            metrics: ['max']
+        - # days since last serious violation at property (at the case level)
+            quantity: 
+                last_violation: 'days_since_last_violation'
+            metrics: ['max']
+        - # days since last inspection in blockgroup (excluding property)
+            quantity: 
+                last_insp_bg_excl: 'days_since_last_inspection_bg_excl'
+            metrics: ['max']
+        - # days since last violation in blockgroup (excluding property)
+            quantity: 
+                last_vio_bg_excl: 'days_since_last_violation_bg_excl'
+            metrics: ['max']
+        - # days since last building permit associated with the property
+            quantity: 
+                last_bldg_permit: 'days_since_last_building_permit'
+            metrics: ['max']
+        - # was there a serious violation at the last inspection? (filling with 0 if days since last is begining of time)
+            quantity:
+                srs_vio_last_insp: |
+                    CASE 
+                         WHEN days_since_last_inspection_case + 1 >= '{collate_date}'::DATE - '2000-01-01'::DATE THEN 0
+                         WHEN days_since_last_violation > days_since_last_inspection_case THEN 0 
+                         WHEN days_since_last_violation <= days_since_last_inspection_case THEN 1
+                         ELSE 0 
+                    END
+            metrics: ['max']
+    intervals: ['1d']
+    groups: ['entity_id']

@@ -1,0 +1,116 @@
+- # Features for foreclosures at the MH property level
+    prefix: 'mh_frclsr'
+    from_obj: 'staging.mh_foreclosure_hist'
+    knowledge_date_column: 'foreclosure_knowledge_date'
+
+    # using zero_noflag for all imputations at the moment to replicate the
+    # behavior of old triage...
+    aggregates_imputation:
+        all:
+            type: 'zero_noflag'
+    categoricals_imputation:
+        all:
+            type: 'zero_noflag'
+
+    aggregates:
+        - # any default notices in last X years
+            quantity: 'default_flag'
+            metrics: ['max']
+        - # any foreclosure notices to sale in last X years
+            quantity: 
+                frclsr_flag: 'foreclosure_flag'
+            metrics: ['max']
+    intervals: ['3y', '5y', '10y', '15y']
+    groups: ['entity_id']
+- # Features for foreclosures at the blockgroup level (MH and non-MH residential properties)
+    prefix: 'geo_frclsr'
+    from_obj: 'staging.bg_geo_foreclosure'
+    knowledge_date_column: 'foreclosure_knowledge_date'
+
+    # using zero_noflag for all imputations at the moment to replicate the
+    # behavior of old triage...
+    aggregates_imputation:
+        all:
+            type: 'zero_noflag'
+    categoricals_imputation:
+        all:
+            type: 'zero_noflag'
+
+    aggregates:
+        - # any and number of default notices in last X years
+            quantity: 'bg_default_flag'
+            metrics: ['max', 'sum']
+        - # any and number of foreclosure notices to sale in last X years
+            quantity: 'bg_foreclosure_flag'
+            metrics: ['max', 'sum']
+    intervals: ['1y', '3y', '5y', '10y', '15y']
+    groups: ['entity_id']
+- # Features for MH property sale history
+    prefix: 'mh_sale_dates'
+    from_obj: 'staging.mh_sale_date_hist'
+    knowledge_date_column: 'sale_knowledge_date'
+
+    # using zero_noflag for all imputations at the moment to replicate the
+    # behavior of old triage...
+    aggregates_imputation:
+        all:
+            type: 'zero_noflag'
+    categoricals_imputation:
+        all:
+            type: 'zero_noflag'
+
+    aggregates:
+        - # has this property been sold in the last X years
+            quantity: 'prop_sold_flag'
+            metrics: ['max']
+    intervals: ['1y', '3y', '5y', '10y', '15y']
+    groups: ['entity_id']
+- # Property and geo-level housing most recent housing prices (time series pre-computed, so only use 1d interval)
+    prefix: 'house_prices'
+    from_obj: 'staging.housing_prices_time_series'
+    knowledge_date_column: 'as_of_date'
+
+    # using zero_noflag for all imputations at the moment to replicate the
+    # behavior of old triage...
+    aggregates_imputation:
+        all:
+            type: 'zero_noflag'
+    categoricals_imputation:
+        all:
+            type: 'zero_noflag'
+
+    aggregates:
+        - # last selling price for this property in 2000 dollars/sqft (with blockgroup-level imputation)
+            quantity: 
+                last_price_sqft_2k: 'last_prop_price_sqft_2000'
+            metrics: ['max']
+        - # flag for whether the property price was imputed from blockgroup data
+            quantity: 
+                price_imputed: 'prop_price_imputed_flag'
+            metrics: ['max']
+        - # current median housing price in the property's blockgroup in 2000 dollars per square foot, with various levels of imputation
+            quantity: 
+                bg_median_price: 'bg_median_price_sqft_2000'
+            metrics: ['max']
+        - # flag for blockgroup level house values imputed using tract-level data
+            quantity: 
+                bg_tract_imputed: 'bg_tract_imputed_flag'
+            metrics: ['max']
+        - # flag for blockgroup level house values imputed using first 4 digits of tract-level data
+            quantity: 
+                bg_tract4_imputed: 'bg_tract4_imputed_flag'
+            metrics: ['max']
+        - # flag for blockgroup level house values imputed using city-level data
+            quantity: 
+                bg_city_imputed: 'bg_city_imputed_flag'
+            metrics: ['max']
+        - # annualized percent change in 2000-adjusted house values per square foot in the blockgroup
+            quantity: 
+                bg_price_change: 'bg_median_price_annual_pct_change'
+            metrics: ['max']
+        - # flag for any imputation in housing value changes
+            quantity: 
+                bg_price_change_imputed: 'bg_price_change_imputed_flag'
+            metrics: ['max']
+    intervals: ['1d']
+    groups: ['entity_id']

@@ -1,0 +1,6 @@
+host: el-salvador-mined.cjtbxnsr2fzp.us-west-2.rds.amazonaws.com
+user: postgres
+db: san_jose_housing
+pass: treeposterbagivylabel 
+role: postgres
+port: 5432

@@ -1,0 +1,19 @@
+experiment_hash: '7bfb397f00416f59fb409fde51e6b6fa'
+file_path: '/mnt/data/experiment_data/joco2/joco_original/matrices'
+out_file_path: '/mnt/data/experiment_data/joco2/joco_zafar'
+race_query: 'select entity_id, race from hemank_bias_alternatives.currmatch_entity_demos'
+label_col: 'booking_view_warr_bw_1y'
+demo_col: 'race'
+model_group_id: 67
+sa_column: 'race'
+anchor_sa_value: 'W'
+dest_table: 'zafar_predictions'
+dest_schema: 'test_results'
+
+train_config:
+  max_iters: 300 #300
+  max_iters_dccp: 150 #150
+  tau: 0.005
+  mu: 1.2
+  random_seed: 112233
+  EPS: 1e-4
