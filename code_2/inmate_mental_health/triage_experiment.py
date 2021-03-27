@@ -54,7 +54,7 @@ def setup_experiment(experiment_config_file):
     cf = ntpath.basename(experiment_config_file)[0:10]
     data_folder = '/mnt/data/experiment_data/'
 
-    project_folder = os.path.join(data_folder, 'peeps', 'joco_both_sample_race', 'BOTH_sampled_over_0')
+    project_folder = os.path.join(data_folder, 'joco', 'decoupled_nonwhite')
     print("="*10)
     print(project_folder)
     print("="*10)
@@ -132,15 +132,15 @@ def visualize_timechop(config_file):
     user = getpass.getuser()
     cf = ntpath.basename(config_file)[0:10]
     data_folder = '/mnt/data/experiment_data/'
-    save_path = os.path.join(data_folder, 'peeps', 
-    'joco_both_sample_race', 'BOTH_sampled_over_0')
     
-    visualize_chops(
-        chopper=chopper,
-        show_as_of_times=True,
-        show_boundaries=True,
-        save_target=save_path
-    )
+    #save_path = os.path.join(data_folder, 'joco', 'joco_original')
+    
+    #visualize_chops(
+    #    chopper=chopper,
+    #    show_as_of_times=True,
+    #    show_boundaries=True,
+    #    save_target=save_path
+    #)
 
 if __name__ == '__main__':
     config_file = sys.argv[1]  
@@ -155,3 +155,4 @@ if __name__ == '__main__':
         run_exp=True,
         n_jobs=int(n_jobs)
     )
+    

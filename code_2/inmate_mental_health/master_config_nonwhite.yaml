@@ -5,7 +5,7 @@
 config_version: 'v7'
 
 # EXPERIMENT METADATA
-model_comment: 'over_orig_50_orig'
+model_comment: 'decoupled_nonwhite'
 
 # TIME SPLITTING
 # The time window to look at, & how to divide the window into train/test splits
@@ -32,17 +32,23 @@ cohort_config:
              -- If the end date of a daterange is NULL, then postgres will assume it is infinitely in the future
              WHERE '{as_of_date}'::date <@ daterange(booking.knowledge_date, release.knowledge_date)
         )
+        , current_race_subset AS (
+            SELECT entity_id
+            FROM hemank_bias_alternatives.currmatch_entity_demos
+            WHERE as_of_date = '{as_of_date}'::DATE
+            AND race_2way = 'NonWhite'
+        )
         SELECT DISTINCT r.entity_id
           FROM records.jims_release_records r
-               LEFT JOIN current_inmates c
+          JOIN current_race_subset cr USING(entity_id)
+          LEFT JOIN current_inmates c
                  ON c.entity_id = r.entity_id
                -- released in last 3 years
          WHERE knowledge_date <@ daterange(('{as_of_date}'::date - '3 years'::interval)::date, '{as_of_date}'::date)
                -- and not currently in jail
            AND c.entity_id IS NULL
            AND r.entity_id IS NOT NULL
-        
-    name: 'release_last_3_years_not_currently_in_jail'
+    name: 'release_last_3_years_not_currently_in_jail_race_nonwhite'
 
 # LABEL GENERATION
 label_config:
