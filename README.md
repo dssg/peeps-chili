@@ -20,13 +20,20 @@ Because the data from these other projects cannot be publicly released, we have 
 
 ## Replication with Public Data
 
-Although several of the datasets used for this work contain sensitive information and were made available under data use agreements that don't allow for public release, data from the Education Crowdfunding use case is publicly available. 
+Although several of the datasets used for this work contain sensitive information and were made available under data use agreements that don't allow for public release, data from the Education Crowdfunding use case is publicly available. Here we provide three options for replicating the analysis from our study:
 
+### Option 1: Colab Notebook (simple example with little setup time)
 For a simple application of the methods discussed here on this dataset, take a look at [this interactive colab notebook](https://colab.research.google.com/github/dssg/fairness_tutorial/blob/master/notebooks/bias_reduction.ipynb), which we developed for part of our [FairML tutorial](https://dssg.github.io/fairness_tutorial/) presented at KDD 2020 and AAAI 2021.
 
-A more complete replication of the analysis here with the Education Crowdfunding dataset can be achieved with the following steps:
+### Option 2: Replicating Bias Analysis with Existing Models (step-by-step notebook)
+To facilitate replicating the full results from the Education Crowdfunding setting presented in the study, we have made an extract of our database publicly available on S3. This extract contains the results of our model runs as well as the bias adjustment analysis presented in the study and can easily be used either to replicate our figures or re-run the bias analysis using a step-by-step jupyter notebook in the [/code/education_crowdfunding_replication](/code/education_crowdfunding_replication) directory -- see the [README](/code/education_crowdfunding_replication/README.md) in that directory for instructions on downloading the database dump and getting setup. The extract also contains the raw data from DonorsChoose, so could be used as a starting point for re-running or adding to the model grid as well.
+
+Note that you'll need a postgres server (version 11.10 or above) with around 300 GB of free disk space to load the data extract as well as machine running python 3.7 or higher for the analysis.
+
+### Option 3: Rerunning Models and Bias Analysis from Scratch
+If you would like to rerun the models themselves in order to recreate the results starting from the Education Crowdfunding dataset itself, this can be achieved with the following steps:
 1. Follow the instructions from the [dssg/donors-choose](https://github.com/dssg/donors-choose) github repo for obtaining and transforming the [DonorsChoose KDD cup 2014 dataset](https://www.kaggle.com/c/kdd-cup-2014-predicting-excitement-at-donors-choose/data) and running a grid of machine learning models
-  - The data should be loaded into a postgresql database (we have used postgres 11.8 in our work here) and the machine learning and disparity mitigating code here works with python 3.7 or higher
+  - The data should be loaded into a postgresql database (we have used postgres 11.10 in our work here) and the machine learning and disparity mitigating code here works with python 3.7 or higher
   - Modeling makes use of our machine learning pipeline, [triage](https://github.com/dssg/donors-choose), to run sklearn models. See the [donors-choose requirements.txt](https://github.com/dssg/donors-choose/blob/master/requirements.txt) and [triage requirements](https://github.com/dssg/triage/tree/master/requirement) for specific versions. Following the installation instructions from the donors-choose repository will install all the necessary dependencies and should take less than an hour.
   - This will produce a set of trained model objects stored on disk as well as predictions and validation results stored into the postgres database
 2. Install the requirements specific to the bias mitigation code with `pip install -r /code/education_crowdfunding/requirements.txt`
