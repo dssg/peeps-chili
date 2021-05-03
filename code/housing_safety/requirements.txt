@@ -1,5 +1,5 @@
 triage==4.0.1
 jupyter==1.0.0
 dateparser==0.7.4
-Jinja2==2.11.2
+Jinja2==2.11.3
 ohio==0.5.0
