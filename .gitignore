@@ -1,23 +1,18 @@
 # ignore everything in the following folders
-<<<<<<< HEAD
 # data/**
 logs/**
 references/**
 results/**
 conf/**
 code/el_salvador/triage/conf/local/**
-=======
-code/el_salvador/triage/conf/local/**
 config/**
 
 # ignore log files
 LOG*
->>>>>>> 374735abfe42de6e3728a3e1d5369601ead0b02c
 
 # Jupyter Notebook
 .ipynb_checkpoints
 
-<<<<<<< HEAD
 # IPython
 
 # IntelliJ
@@ -38,7 +33,3 @@ desktop.ini
 
 # config files
 *.yaml
-=======
-# VS Code
-.vscode/
->>>>>>> 374735abfe42de6e3728a3e1d5369601ead0b02c
