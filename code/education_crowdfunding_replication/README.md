@@ -6,7 +6,7 @@ You can also re-run (or add to) the model grid starting from the public DonorsCh
 
 ## Requirements
 
-You'll need a postgres server (version 11.10 or above) with around 300 GB of free disk space to load the data extract as well as machine running python 3.6 or higher for the analysis.
+You'll need a postgres server (version 11.10 or above) with around 300 GB of free disk space to load the data extract as well as machine running python 3.7 or higher for the analysis.
 
 ## Getting Set Up
 
