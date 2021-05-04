@@ -5,7 +5,7 @@
          MAX(rr.model_group_id) AS model_group_id_demo, -- max over identical values
          1.0000*COUNT(*)/gn.list_size AS frac_demo,
          MAX(rr.recall_demo_rolling) AS group_recall
-  FROM tmp_bias_rolling_recall rr
+  FROM {{schema}}.tmp_bias_rolling_recall rr
   JOIN group_nums gn
     ON gn.model_group_id = rr.model_group_id
     AND gn.future_train_end_time = rr.train_end_time
@@ -50,7 +50,7 @@
          'precision@'::VARCHAR(256) AS metric,
          gn.list_size::VARCHAR||'_abs'::VARCHAR(256) AS parameter,
          AVG(label_value) AS value
-  FROM tmp_bias_rolling_recall rr
+  FROM {{schema}}.tmp_bias_rolling_recall rr
   JOIN group_nums gn 
     ON rr.model_group_id = gn.model_group_id 
     AND rr.train_end_time = gn.future_train_end_time
@@ -97,9 +97,8 @@ ALTER TABLE tmp_bias_sample ADD PRIMARY KEY(entity_id, as_of_date);
 
 
 -- Rolling Recall: sorted subgroups with subgroup recall up to that individual
-DROP TABLE IF EXISTS tmp_bias_rolling_recall CASCADE;
-CREATE LOCAL TEMPORARY TABLE tmp_bias_rolling_recall
-  ON COMMIT PRESERVE ROWS
+DROP TABLE IF EXISTS {{schema}}.tmp_bias_rolling_recall CASCADE;
+CREATE TABLE {{schema}}.tmp_bias_rolling_recall
 AS
 WITH preds AS (
   SELECT mods.train_end_time, mods.model_group_id, p.model_id, p.entity_id, p.as_of_date, p.score, p.label_value,
@@ -139,9 +138,9 @@ SELECT *,
 FROM rolling_recall
 ORDER BY model_group_id, model_id, rn_demo
 ;
-CREATE INDEX ON tmp_bias_rolling_recall(train_end_time, model_group_id, demo_value, num_demo_rolling);
-CREATE INDEX ON tmp_bias_rolling_recall(train_end_time, model_group_id, rn_recall);
-CREATE INDEX ON tmp_bias_rolling_recall(train_end_time, demo_value, rn_mg_perf);
+CREATE INDEX ON {{schema}}.tmp_bias_rolling_recall(train_end_time, model_group_id, demo_value, num_demo_rolling);
+CREATE INDEX ON {{schema}}.tmp_bias_rolling_recall(train_end_time, model_group_id, rn_recall);
+CREATE INDEX ON {{schema}}.tmp_bias_rolling_recall(train_end_time, demo_value, rn_mg_perf);
 
 
 
@@ -155,7 +154,7 @@ WITH group_nums AS (
     -- at the group numbers implied for each `future_train_end_time` at the overall list size
     SELECT 'base'::VARCHAR(256) AS method, rr.model_group_id, et.past_train_end_time, et.future_train_end_time, 
            list_size, rr.demo_value, COUNT(*) AS group_k
-    FROM tmp_bias_rolling_recall rr
+    FROM {{schema}}.tmp_bias_rolling_recall rr
     JOIN tmp_bias_end_times et ON rr.train_end_time = et.future_train_end_time
     CROSS JOIN tmp_bias_list_sizes
     WHERE model_rank <= list_size
@@ -180,7 +179,7 @@ WITH group_nums AS (
     -- be validated in an ongoing manner.
     SELECT 'adjusted'::VARCHAR(256) AS method, rr.model_group_id, et.past_train_end_time, et.future_train_end_time, 
            list_size, rr.demo_value, COUNT(*) AS group_k
-    FROM tmp_bias_rolling_recall rr
+    FROM {{schema}}.tmp_bias_rolling_recall rr
     JOIN tmp_bias_end_times et ON rr.train_end_time = et.past_train_end_time
     CROSS JOIN tmp_bias_list_sizes
     WHERE rn_recall <= list_size
@@ -240,7 +239,7 @@ WITH best_mgs_rr AS (
   -- could possible have ties across demos in that case, but there random should be fine since we'll
   -- be well-ordered within demo for calculating group-k, rolling precision, etc.
   SELECT *, ROW_NUMBER() OVER (PARTITION BY train_end_time ORDER BY recall_demo_rolling ASC, model_rank ASC, RANDOM()) AS rn_endtime_recall
-  FROM tmp_bias_rolling_recall
+  FROM {{schema}}.tmp_bias_rolling_recall
   WHERE rn_mg_perf = 1
 )
 , group_nums_pre AS (
@@ -261,6 +260,43 @@ WITH best_mgs_rr AS (
 ;
 
 
+
+-- DWORK-"LIGHT" COMPOSITE MODEL BY SCORE NOT ROLLING RECALL (ABLATION STUDY)
+-- figure out best model at every depth for each group (rather than guessing) as in Dwork et all
+-- but without fully decoupled models...
+
+DROP TABLE IF EXISTS {{schema}}.composite_results_ablate_{{demo_col}};
+CREATE TABLE {{schema}}.composite_results_ablate_{{demo_col}}
+AS
+WITH best_mgs_rr AS (
+  -- model_rank as the tie breker has the same potential issues as above, but may be amplified by the
+  -- fact it's calculated across different models here. Also need to tie break beyond this since we
+  -- could possible have ties across demos in that case, but there random should be fine since we'll
+  -- be well-ordered within demo for calculating group-k, rolling precision, etc.
+  SELECT *, ROW_NUMBER() OVER (PARTITION BY train_end_time ORDER BY score DESC, model_rank ASC, RANDOM()) AS rn_endtime_score
+  FROM {{schema}}.tmp_bias_rolling_recall
+  WHERE rn_mg_perf = 1
+)
+, group_nums_pre AS (
+  SELECT DISTINCT ON (train_end_time, demo_col, demo_value, list_size)
+    train_end_time, list_size, demo_col, demo_value, rn_demo AS group_k, model_group_id, precision_demo_rolling, recall_demo_rolling
+  FROM best_mgs_rr rr
+  JOIN tmp_bias_list_sizes ls ON rr.rn_endtime_score <= ls.list_size
+  ORDER BY train_end_time, demo_col, demo_value, list_size, rn_demo DESC
+), group_nums AS (
+  SELECT DISTINCT 'composite_ablate'::VARCHAR(256) AS method, model_group_id,
+         et.past_train_end_time, et.future_train_end_time,
+         list_size, demo_value, group_k
+  FROM group_nums_pre gnp
+  JOIN tmp_bias_end_times et
+    ON gnp.train_end_time = et.past_train_end_time
+)
+{{ results_sql }}
+;
+
+
+
+
 -- FULL DECOUPLED COMPOSITE MODEL
 -- Requires you to have built separate models for each group identified by a set of experiment hashes
 -- with `decoupled_experiments := [(experiment_hash, demo_value), (experiment_hash, demo_value), ...]
@@ -274,9 +310,8 @@ WITH best_mgs_rr AS (
 
 -- TODO: DRY up with normal rolling recall
 -- Decoupled Rolling Recall: sorted subgroups with subgroup recall up to that individual
-DROP TABLE IF EXISTS tmp_bias_rolling_recall_decoupled CASCADE;
-CREATE LOCAL TEMPORARY TABLE tmp_bias_rolling_recall_decoupled
-  ON COMMIT PRESERVE ROWS
+DROP TABLE IF EXISTS {{schema}}.tmp_bias_rolling_recall_decoupled CASCADE;
+CREATE TABLE {{schema}}.tmp_bias_rolling_recall_decoupled
 AS
 WITH exp_demo AS (
   {% for exp_hash, demo in decoupled_experiments %}
@@ -328,30 +363,29 @@ ORDER BY model_group_id, model_id, rn_demo
 ;
 
 -- FIXME: Gross modification to allow code reuse from above, swapping in a union of the decoupled
---        and overall rolling recall tables to tmp_bias_rolling_recall
-ALTER TABLE tmp_bias_rolling_recall RENAME TO tmp_bias_rolling_recall_coupled;
+--        and overall rolling recall tables to {{schema}}.tmp_bias_rolling_recall
+ALTER TABLE {{schema}}.tmp_bias_rolling_recall RENAME TO tmp_bias_rolling_recall_coupled;
 
-DROP TABLE IF EXISTS tmp_bias_rolling_recall;
-CREATE LOCAL TEMPORARY TABLE tmp_bias_rolling_recall
-  ON COMMIT PRESERVE ROWS
+DROP TABLE IF EXISTS {{schema}}.tmp_bias_rolling_recall;
+CREATE TABLE {{schema}}.tmp_bias_rolling_recall
 AS
 WITH pre AS (
   SELECT entity_id, train_end_time, model_group_id, model_id, score, label_value, model_rank,
          demo_col, demo_value, rn_demo, num_demo_rolling, tp_demo_rolling, recall_demo_rolling,
          precision_demo_rolling, rn_recall
-  FROM tmp_bias_rolling_recall_decoupled
+  FROM {{schema}}.tmp_bias_rolling_recall_decoupled
   UNION ALL
   SELECT entity_id, train_end_time, model_group_id, model_id, score, label_value, model_rank,
          demo_col, demo_value, rn_demo, num_demo_rolling, tp_demo_rolling, recall_demo_rolling,
          precision_demo_rolling, rn_recall
-  FROM tmp_bias_rolling_recall_coupled
+  FROM {{schema}}.tmp_bias_rolling_recall_coupled
 )
 SELECT *, ROW_NUMBER() OVER (PARTITION BY train_end_time, demo_col, demo_value, rn_demo ORDER BY precision_demo_rolling DESC, RANDOM()) AS rn_mg_perf
 FROM pre
 ;
-CREATE INDEX ON tmp_bias_rolling_recall(train_end_time, model_group_id, demo_value, num_demo_rolling);
-CREATE INDEX ON tmp_bias_rolling_recall(train_end_time, model_group_id, rn_recall);
-CREATE INDEX ON tmp_bias_rolling_recall(train_end_time, demo_value, rn_mg_perf);
+CREATE INDEX ON {{schema}}.tmp_bias_rolling_recall(train_end_time, model_group_id, demo_value, num_demo_rolling);
+CREATE INDEX ON {{schema}}.tmp_bias_rolling_recall(train_end_time, model_group_id, rn_recall);
+CREATE INDEX ON {{schema}}.tmp_bias_rolling_recall(train_end_time, demo_value, rn_mg_perf);
 
 
 
@@ -365,7 +399,7 @@ WITH best_mgs_rr AS (
   -- could possible have ties across demos in that case, but there random should be fine since we'll
   -- be well-ordered within demo for calculating group-k, rolling precision, etc.
   SELECT *, ROW_NUMBER() OVER (PARTITION BY train_end_time ORDER BY recall_demo_rolling ASC, model_rank ASC, RANDOM()) AS rn_endtime_recall
-  FROM tmp_bias_rolling_recall
+  FROM {{schema}}.tmp_bias_rolling_recall
   WHERE rn_mg_perf = 1
 )
 , group_nums_pre AS (
@@ -385,11 +419,43 @@ WITH best_mgs_rr AS (
 {{ results_sql }}
 ;
 
+
+-- DECOUPLED COMPOSITE BY SCORE NOT ROLLING RECALL (ABLATION STUDY)
+DROP TABLE IF EXISTS {{schema}}.composite_results_decoupled_ablate_{{demo_col}};
+CREATE TABLE {{schema}}.composite_results_decoupled_ablate_{{demo_col}}
+AS
+WITH best_mgs_rr AS (
+  -- model_rank as the tie breker has the same potential issues as above, but may be amplified by the
+  -- fact it's calculated across different models here. Also need to tie break beyond this since we
+  -- could possible have ties across demos in that case, but there random should be fine since we'll
+  -- be well-ordered within demo for calculating group-k, rolling precision, etc.
+  SELECT *, ROW_NUMBER() OVER (PARTITION BY train_end_time ORDER BY score DESC, model_rank ASC, RANDOM()) AS rn_endtime_score
+  FROM {{schema}}.tmp_bias_rolling_recall
+  WHERE rn_mg_perf = 1
+)
+, group_nums_pre AS (
+  SELECT DISTINCT ON (train_end_time, demo_col, demo_value, list_size)
+    train_end_time, list_size, demo_col, demo_value, rn_demo AS group_k, model_group_id, precision_demo_rolling, recall_demo_rolling
+  FROM best_mgs_rr rr
+  JOIN tmp_bias_list_sizes ls ON rr.rn_endtime_score <= ls.list_size
+  ORDER BY train_end_time, demo_col, demo_value, list_size, rn_demo DESC
+), group_nums AS (
+  SELECT DISTINCT 'composite_decoupled_ablate'::VARCHAR(256) AS method, model_group_id,
+         et.past_train_end_time, et.future_train_end_time,
+         list_size, demo_value, group_k
+  FROM group_nums_pre gnp
+  JOIN tmp_bias_end_times et
+    ON gnp.train_end_time = et.past_train_end_time
+)
+{{ results_sql }}
+;
+
+
 {% endif %}
 
-DROP TABLE IF EXISTS tmp_bias_rolling_recall CASCADE;
-DROP TABLE IF EXISTS tmp_bias_rolling_recall_coupled CASCADE;
-DROP TABLE IF EXISTS tmp_bias_rolling_recall_decoupled CASCADE;
+-- DROP TABLE IF EXISTS tmp_bias_rolling_recall CASCADE;
+-- DROP TABLE IF EXISTS tmp_bias_rolling_recall_coupled CASCADE;
+-- DROP TABLE IF EXISTS tmp_bias_rolling_recall_decoupled CASCADE;
 
 
 
