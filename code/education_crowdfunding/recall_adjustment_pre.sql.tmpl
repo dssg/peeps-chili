@@ -31,12 +31,13 @@ CREATE LOCAL TEMPORARY TABLE tmp_bias_models
     UNION DISTINCT
     SELECT DISTINCT future_train_end_time AS train_end_time FROM tmp_bias_end_times
   )
-  SELECT DISTINCT m.model_id, m.model_group_id, m.train_end_time
+  SELECT DISTINCT MIN(m.model_id) AS model_id, m.model_group_id, m.train_end_time
   FROM model_metadata.experiment_models em
   JOIN model_metadata.models m USING(model_hash)
   JOIN model_metadata.model_groups mg USING(model_group_id)
   JOIN all_end_times USING(train_end_time)
   WHERE em.experiment_hash IN ('{{experiment_hashes|join("','")}}')
+  GROUP BY 2,3
 ;
 ALTER TABLE tmp_bias_models ADD PRIMARY KEY (model_id);
 
