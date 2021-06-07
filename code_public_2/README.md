@@ -15,8 +15,9 @@ triage: Contains all the code to run [triage](https://github.com/dssg/triage) wh
 1. In the original `triage` config file, remove the features that contribute to demographics information.
 2. Run `triage`
 
-#### Zafar
+#### Zafar et. al.
 1. See `zafar_methods` folder
+2. The `fair-classification` folder is a dependency for running this method.
 
 #### Decoupled
 1. Create two configs from the original config. Modify the `cohort` information such that each config runs only on subset of the entities belonging to only one demographic group.
