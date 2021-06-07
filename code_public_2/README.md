@@ -9,11 +9,11 @@ triage: Contains all the code to run [triage](https://github.com/dssg/triage) wh
 
 1. Run `triage` on the dataset with the original configuration.
 2. Run Sampling to generate sampled matrices.
-3. For each sampling config, run `triage` with `replace=False` and project_dir as the directory of the sampled matrices.
+3. For each sampling config, run `triage` with `replace=False`; change `model_comment` and set project_dir as the directory of the sampled matrices.
 
 #### No Protected
 1. In the original `triage` config file, remove the features that contribute to demographics information.
-2. Run `triage`
+2. Run `triage` with a different project dir and `model_comment`.
 
 #### Zafar et. al.
 1. See `zafar_methods` folder
