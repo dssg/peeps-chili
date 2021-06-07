@@ -1,0 +1,21 @@
+experiment_hash: '9dcafc4760c3618bfae96a54a4359481'
+file_path: '/mnt/data/experiment_data/sanjose/original/matrices'
+out_file_path: '/mnt/data/experiment_data/sanjose/sanjose_zafar'
+#race_query: 'select entity_id, ovg from bias_analysis_1year.entity_demos'
+#race_query: 'select entity_id, plevel from hemank_bias_original.entity_demos3'
+race_query: 'select entity_id,  median_income from kit_bias_adj.entity_demos'
+#label_col: 'outcome'
+label_col: 'any_serious_violation'
+demo_col: 'median_income'
+model_group_id: 62
+sa_column: 'median_income'
+anchor_sa_value: 'under55k'
+dest_table: 'zafar_predictions'
+dest_schema: 'test_results'
+train_config:
+  max_iters: 300
+  max_iters_dccp: 150
+  tau: 0.005
+  mu: 1.2
+  random_seed: 112233
+  EPS: 1e-4

@@ -1,0 +1,18 @@
+experiment_hash: '1f988cbbfc64eb991ecd6f9240e67cfe'
+file_path: '/mnt/data/experiment_data/donors2/donors_original/matrices'
+out_file_path: '/mnt/data/experiment_data/donors2/donors_zafar_original'
+race_query: 'select entity_id, plevel from hemank_bias_original.entity_demos3'
+label_col: 'outcome'
+demo_col: 'plevel'
+model_group_id: 1199
+sa_column: 'plevel'
+anchor_sa_value: 'highest'
+dest_table: 'zafar_predictions'
+dest_schema: 'test_results'
+train_config:
+  max_iters: 300
+  max_iters_dccp: 150
+  tau: 0.005
+  mu: 1.2
+  random_seed: 112233
+  EPS: 1e-4

@@ -1,0 +1,20 @@
+experiment_hash: 'a1316f404aecc9df9e3c5264b32770f8'
+file_path: '/mnt/data/experiment_data/elsal_new/original/matrices'
+out_file_path: '/mnt/data/experiment_data/elsal_new/elsal_zafar_original'
+race_query: 'select entity_id, ovg from bias_analysis_1year.entity_demos'
+#race_query: 'select entity_id, plevel from hemank_bias_original.entity_demos3'
+#label_col: 'outcome'
+label_col: 'dropout'
+demo_col: 'ovg'
+model_group_id: 201
+sa_column: 'ovg'
+anchor_sa_value: '1'
+dest_table: 'zafar_predictions'
+dest_schema: 'test_results'
+train_config:
+  max_iters: 300
+  max_iters_dccp: 150
+  tau: 0.005
+  mu: 1.2
+  random_seed: 112233
+  EPS: 1e-4
