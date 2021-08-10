@@ -1,4 +1,6 @@
 # Fairness-Accuracy Trade-Offs in ML for Public Policy
+[![DOI](https://zenodo.org/badge/254551159.svg)](https://zenodo.org/badge/latestdoi/254551159)
+
 This repository contains code relating to our ongoing work explorating the trade-offs between fairness and accuracy in machine learning models developed to support decision-making in public policy contexts.
 
 For each context, modeling was performed with our open-sourced machine learning pipeline toolkit, [triage](https://github.com/dssg/triage). Although the data for several of these projects is confidential and not publicly available, this repository includes our `triage` configuration files (specifying features and model/hyperparameter grids) for all projects as well as the code used for bias mitigation and analysis of trade-offs. The main functionality for bias mitigation is provided in `RecallAdjuster.py` (at the moment, this assumes model results are in the form of `triage` output) and analyses are generally in a set of `jupyter` notebooks in each project directory. Note that in the process of this work, we have made slight adjustments to the `RecallAdjuster` code to accomodate the data in each context, so be sure to use the correct version if working on one of these projects (consolidating these versions is tracked in issue #7).
