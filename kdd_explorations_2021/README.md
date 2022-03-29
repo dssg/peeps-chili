@@ -25,9 +25,15 @@ triage: Contains all the code to run [triage](https://github.com/dssg/triage) wh
 1. Clone `shaycrk/fair-classification` at the `python3` branch into this folder ([link to repo](https://github.com/shaycrk/fair-classification/tree/python3)) -- this is a modification of Zafar's `fair-classification` repository to work with python 3. Note the dependency on `shaycrk/dccp` (which should be handled by installing from the `requirements.txt` from the cloned repo)
 2. See `zafar_methods` folder
 
+### Fairness-Aware Model Selection [Post-Processing]
+1. Run `triage` to generate a grid of models
+2. Follow the analysis in [model_selection/fairness_model_selection.ipynb](model_selection/fairness_model_selection.ipynb) to account for fairness in the model selection process (either by setting a maximum allowable disparity or a maximum allowable loss in accuracy)
+
 #### Decoupled [Post-Processing]
 1. Create two configs from the original config. Modify the `cohort` information such that each config runs only on subset of the entities belonging to only one demographic group.
 2. Run `triage`
+
+Note: some *very preliminary* code exploring an "ablation" study separating the effects of the decoupling and recall-equalizing score thresholds can be found in the [composite_ablation/](composite_ablation/) directory (this naively assumes the scores from the different models are comparable, which is generally not a reasonable assumption, but may be a common one in applying decoupling approaches).
 
 #### Post-Hoc Score Adjustments [Post-Processing]
 
