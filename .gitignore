@@ -1,13 +1,11 @@
 # ignore everything in the following folders
-# data/**
->>>>>>> master
 logs/**
 references/**
 results/**
 conf/**
-code/el_salvador/triage/conf/local/**
+nature_machine_intelligence_2021/el_salvador/triage/conf/local/**
 config/**
-code/el_salvador/pickled_ras
+nature_machine_intelligence_2021/el_salvador/pickled_ras
 
 # ignore log files
 LOG*
