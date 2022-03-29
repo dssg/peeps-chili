@@ -2,13 +2,13 @@
 [![DOI](https://zenodo.org/badge/254551159.svg)](https://zenodo.org/badge/latestdoi/254551159)
 
 This repository contains code relating to our ongoing work explorating the trade-offs between fairness and accuracy in machine learning models developed to support decision-making in public policy contexts. It currently contains code and replication instructions associated with:
-- [nature_machine_intelligence_2021](nature_machine_intelligence_2021/) K.T. Rodolfa, H. Lamba, and R. Ghani. Empirical observation of negligible fairness-accuracy trade-offs in machine learning for public policy. Nature Machine Intelligence 3, 896-904 (2021). [Available in arXiv: 2012.02972](https://arxiv.org/abs/2012.02972)
-- [kdd_explorations_2021](kdd_explorations_2021/) H. Lamba, R. Ghani\*, and K.T. Rodolfa\*. An Empirical Comparison of Bias Reduction Methods on Real-World Problems in High-Stakes Policy Settings. SIGKDD Explorations 23, 69-85. Jun. 2021. [Available in arXiv: 2105.06442](https://arxiv.org/abs/2105.06442)
+- [nature_machine_intelligence_2021/](nature_machine_intelligence_2021/) has code from K.T. Rodolfa, H. Lamba, and R. Ghani. **Empirical observation of negligible fairness-accuracy trade-offs in machine learning for public policy**. _Nature Machine Intelligence_ 3, 896-904 (2021). [Available in arXiv: 2012.02972](https://arxiv.org/abs/2012.02972)
+- [kdd_explorations_2021/](kdd_explorations_2021/) has code from H. Lamba, R. Ghani\*, and K.T. Rodolfa\*. **An Empirical Comparison of Bias Reduction Methods on Real-World Problems in High-Stakes Policy Settings**. _SIGKDD Explorations_ 23, 69-85. Jun. 2021. [Available in arXiv: 2105.06442](https://arxiv.org/abs/2105.06442)
 
 
 ## Negligible Fairness-Accuracy Trade-Offs
 
-The work associated with our 2021 Nature Machine Intelligence study can be found in [nature_machine_intelligence_2021](nature_machine_intelligence_2021/) and some usage details are provided below:
+The work associated with our 2021 Nature Machine Intelligence study can be found in [nature_machine_intelligence_2021/](nature_machine_intelligence_2021/) and some usage details are provided below:
 
 For each context, modeling was performed with our open-sourced machine learning pipeline toolkit, [triage](https://github.com/dssg/triage). Although the data for several of these projects is confidential and not publicly available, this repository includes our `triage` configuration files (specifying features and model/hyperparameter grids) for all projects as well as the code used for bias mitigation and analysis of trade-offs. The main functionality for bias mitigation is provided in `RecallAdjuster.py` (at the moment, this assumes model results are in the form of `triage` output) and analyses are generally in a set of `jupyter` notebooks in each project directory. Note that in the process of this work, we have made slight adjustments to the `RecallAdjuster` code to accomodate the data in each context, so be sure to use the correct version if working on one of these projects (consolidating these versions is tracked in issue #7).
 
@@ -56,5 +56,5 @@ The modeling and analysis here have been performed on a server running Ubuntu 18
 
 ## Comparing Fairness Enhancing Methods
 
-The work associated with our 2021 KDD Explorations study can be found in [kdd_explorations_2021](kdd_explorations_2021/) and some usage details are provided in the README in that directory.
+The work associated with our 2021 KDD Explorations study can be found in [kdd_explorations_2021/](kdd_explorations_2021/) and some usage details are provided in the README in that directory.
 
