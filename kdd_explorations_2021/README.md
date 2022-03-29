@@ -1,7 +1,7 @@
 # Comparing Fairness Enhancing Methods
 The materials in this section of the repository were used in the study:
 
-H. Lamba, R. Ghani*, and K.T. Rodolfa*. An Empirical Comparison of Bias Reduction Methods on Real-World Problems in High-Stakes Policy Settings. SIGKDD Explorations 23, 69-85. Jun. 2021. [Available in arXiv: 2105.06442](https://arxiv.org/abs/2105.06442)
+H. Lamba, R. Ghani\*, and K.T. Rodolfa\*. An Empirical Comparison of Bias Reduction Methods on Real-World Problems in High-Stakes Policy Settings. SIGKDD Explorations 23, 69-85. Jun. 2021. [Available in arXiv: 2105.06442](https://arxiv.org/abs/2105.06442)
 
 
 ## This section of the repository has the following structure:

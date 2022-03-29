@@ -1,7 +1,14 @@
 # Fairness-Accuracy Trade-Offs in ML for Public Policy
 [![DOI](https://zenodo.org/badge/254551159.svg)](https://zenodo.org/badge/latestdoi/254551159)
 
-This repository contains code relating to our ongoing work explorating the trade-offs between fairness and accuracy in machine learning models developed to support decision-making in public policy contexts.
+This repository contains code relating to our ongoing work explorating the trade-offs between fairness and accuracy in machine learning models developed to support decision-making in public policy contexts. It currently contains code and replication instructions associated with:
+- [nature_machine_intelligence_2021](nature_machine_intelligence_2021/) K.T. Rodolfa, H. Lamba, and R. Ghani. Empirical observation of negligible fairness-accuracy trade-offs in machine learning for public policy. Nature Machine Intelligence 3, 896-904 (2021). [Available in arXiv: 2012.02972](https://arxiv.org/abs/2012.02972)
+- [kdd_explorations_2021](kdd_explorations_2021/) H. Lamba, R. Ghani\*, and K.T. Rodolfa\*. An Empirical Comparison of Bias Reduction Methods on Real-World Problems in High-Stakes Policy Settings. SIGKDD Explorations 23, 69-85. Jun. 2021. [Available in arXiv: 2105.06442](https://arxiv.org/abs/2105.06442)
+
+
+## Negligible Fairness-Accuracy Trade-Offs
+
+The work associated with our 2021 Nature Machine Intelligence study can be found in [nature_machine_intelligence_2021](nature_machine_intelligence_2021/) and some usage details are provided below:
 
 For each context, modeling was performed with our open-sourced machine learning pipeline toolkit, [triage](https://github.com/dssg/triage). Although the data for several of these projects is confidential and not publicly available, this repository includes our `triage` configuration files (specifying features and model/hyperparameter grids) for all projects as well as the code used for bias mitigation and analysis of trade-offs. The main functionality for bias mitigation is provided in `RecallAdjuster.py` (at the moment, this assumes model results are in the form of `triage` output) and analyses are generally in a set of `jupyter` notebooks in each project directory. Note that in the process of this work, we have made slight adjustments to the `RecallAdjuster` code to accomodate the data in each context, so be sure to use the correct version if working on one of these projects (consolidating these versions is tracked in issue #7).
 
@@ -10,16 +17,16 @@ The bias mitigation here extends on methods we described recently at [FAT* 2020]
 Each project is described briefly below:
 
 ### Inmate Mental Health
-The Inmate Mental Health project focuses on breaking the cycle of incarceration in Johnson County, KS, by proactive outreach from their Mental Health Center's Mobile Crisis Response Team to individuals with a history of incarceration and mental health need and at risk of returning to jail. Early results from this work was presented at [ACM COMPASS 2018](https://dl.acm.org/citation.cfm?id=3209869) and code for this analysis can be found in [code/joco](code/joco).
+The Inmate Mental Health project focuses on breaking the cycle of incarceration in Johnson County, KS, by proactive outreach from their Mental Health Center's Mobile Crisis Response Team to individuals with a history of incarceration and mental health need and at risk of returning to jail. Early results from this work was presented at [ACM COMPASS 2018](https://dl.acm.org/citation.cfm?id=3209869) and code for this analysis can be found in [nature_machine_intelligence_2021/joco](nature_machine_intelligence_2021/joco).
 
 ### Housing Safety
-The Housing Safety project involved helping the Code Enforcement Office in the City of San Jose prioritize inspections of multiple housing properties (such as apartment buildings) to identify health and safety violations that might put their tenants at risk. Some more details about the approach and initial results of this work can be found in [this blog post](http://www.dssgfellowship.org/2017/07/14/data-driven-inspections-for-safer-housing-in-san-jose-california/) and code for this analysis can be found in [code/housing_safety](code/housing_safety).
+The Housing Safety project involved helping the Code Enforcement Office in the City of San Jose prioritize inspections of multiple housing properties (such as apartment buildings) to identify health and safety violations that might put their tenants at risk. Some more details about the approach and initial results of this work can be found in [this blog post](http://www.dssgfellowship.org/2017/07/14/data-driven-inspections-for-safer-housing-in-san-jose-california/) and code for this analysis can be found in [nature_machine_intelligence_2021/housing_safety](nature_machine_intelligence_2021/housing_safety).
 
 ### Student Outcomes
-In the Student Outcomes project, we partnered with El Salvadar to help them target interventions for students at risk of dropping out of school each year. The repository from this project was made publicly available and contains a detailed overview of that work [here](https://github.com/dssg/El_Salvador_mined_education) and the code for the fairness-accuracy trade-off investigations can be found in [code/el_salvador](code/el_salvador).
+In the Student Outcomes project, we partnered with El Salvadar to help them target interventions for students at risk of dropping out of school each year. The repository from this project was made publicly available and contains a detailed overview of that work [here](https://github.com/dssg/El_Salvador_mined_education) and the code for the fairness-accuracy trade-off investigations can be found in [nature_machine_intelligence_2021/el_salvador](nature_machine_intelligence_2021/el_salvador).
 
 ### Education Crowdfunding
-Because the data from these other projects cannot be publicly released, we have also been investigating these trade-offs in the context of a project based around data [made public by DonorsChoose in 2014](https://www.kaggle.com/c/kdd-cup-2014-predicting-excitement-at-donors-choose/data) to provide an example that can be more readily reproduced by other researchers. Code relating to this case study can be found in [code/education_crowdfunding](code/education_crowdfunding).
+Because the data from these other projects cannot be publicly released, we have also been investigating these trade-offs in the context of a project based around data [made public by DonorsChoose in 2014](https://www.kaggle.com/c/kdd-cup-2014-predicting-excitement-at-donors-choose/data) to provide an example that can be more readily reproduced by other researchers. Code relating to this case study can be found in [nature_machine_intelligence_2021/education_crowdfunding](nature_machine_intelligence_2021/education_crowdfunding).
 
 
 ## Replication with Public Data
@@ -30,7 +37,7 @@ Although several of the datasets used for this work contain sensitive informatio
 For a simple application of the methods discussed here on this dataset, take a look at [this interactive colab notebook](https://colab.research.google.com/github/dssg/fairness_tutorial/blob/master/notebooks/bias_reduction.ipynb), which we developed for part of our [FairML tutorial](https://dssg.github.io/fairness_tutorial/) presented at KDD 2020 and AAAI 2021.
 
 ### Option 2: Replicating Bias Analysis with Existing Models (step-by-step notebook)
-To facilitate replicating the full results from the Education Crowdfunding setting presented in the study, we have made an extract of our database publicly available on S3. This extract contains the results of our model runs as well as the bias adjustment analysis presented in the study and can easily be used either to replicate our figures or re-run the bias analysis using a step-by-step jupyter notebook in the [/code/education_crowdfunding_replication](/code/education_crowdfunding_replication) directory -- see the [README](/code/education_crowdfunding_replication/README.md) in that directory for instructions on downloading the database dump and getting setup. The extract also contains the raw data from DonorsChoose, so could be used as a starting point for re-running or adding to the model grid as well.
+To facilitate replicating the full results from the Education Crowdfunding setting presented in the study, we have made an extract of our database publicly available on S3. This extract contains the results of our model runs as well as the bias adjustment analysis presented in the study and can easily be used either to replicate our figures or re-run the bias analysis using a step-by-step jupyter notebook in the [/nature_machine_intelligence_2021/education_crowdfunding_replication](/nature_machine_intelligence_2021/education_crowdfunding_replication) directory -- see the [README](/nature_machine_intelligence_2021/education_crowdfunding_replication/README.md) in that directory for instructions on downloading the database dump and getting setup. The extract also contains the raw data from DonorsChoose, so could be used as a starting point for re-running or adding to the model grid as well.
 
 Note that you'll need a postgres server (version 11.10 or above) with around 300 GB of free disk space to load the data extract as well as machine running python 3.7 or higher for the analysis.
 
@@ -40,10 +47,14 @@ If you would like to rerun the models themselves in order to recreate the result
   - The data should be loaded into a postgresql database (we have used postgres 11.10 in our work here) and the machine learning and disparity mitigating code here works with python 3.7 or higher
   - Modeling makes use of our machine learning pipeline, [triage](https://github.com/dssg/donors-choose), to run sklearn models. See the [donors-choose requirements.txt](https://github.com/dssg/donors-choose/blob/master/requirements.txt) and [triage requirements](https://github.com/dssg/triage/tree/master/requirement) for specific versions. Following the installation instructions from the donors-choose repository will install all the necessary dependencies and should take less than an hour.
   - This will produce a set of trained model objects stored on disk as well as predictions and validation results stored into the postgres database
-2. Install the requirements specific to the bias mitigation code with `pip install -r /code/education_crowdfunding/requirements.txt`
-3. Start a jupyter notebook server and copy the files from [/code/education_crowdfunding](/code/education_crowdfunding) into your notebook directory
-4. Follow the steps in [/code/education_crowdfunding/20200612_dc_figures.ipynb](/code/education_crowdfunding/20200612_dc_figures.ipynb) to run the bias mitigation and model selection analysis
+2. Install the requirements specific to the bias mitigation code with `pip install -r /nature_machine_intelligence_2021/education_crowdfunding/requirements.txt`
+3. Start a jupyter notebook server and copy the files from [/nature_machine_intelligence_2021/education_crowdfunding](/nature_machine_intelligence_2021/education_crowdfunding) into your notebook directory
+4. Follow the steps in [/nature_machine_intelligence_2021/education_crowdfunding/20200612_dc_figures.ipynb](/nature_machine_intelligence_2021/education_crowdfunding/20200612_dc_figures.ipynb) to run the bias mitigation and model selection analysis
 
 The modeling and analysis here have been performed on a server running Ubuntu 18.04, but should run on most linux-based systems. We would recommend running the models on a reasonably well-provisioned server, but on a typical desktop these could probably be expected to complete in 1-2 days. The bias mitigation and model selection analysis would likely require 30-90 minutes on a typical desktop.
 
+
+## Comparing Fairness Enhancing Methods
+
+The work associated with our 2021 KDD Explorations study can be found in [kdd_explorations_2021](kdd_explorations_2021/) and some usage details are provided in the README in that directory.
 
