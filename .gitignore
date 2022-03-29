@@ -1,11 +1,11 @@
 # ignore everything in the following folders
-# data/**
 logs/**
 references/**
 results/**
 conf/**
-code/el_salvador/triage/conf/local/**
+nature_machine_intelligence_2021/el_salvador/triage/conf/local/**
 config/**
+nature_machine_intelligence_2021/el_salvador/pickled_ras
 
 # ignore log files
 LOG*
@@ -32,4 +32,7 @@ desktop.ini
 *.sh
 
 # config files
-*.yaml
+#*.yaml
+
+# VS Code
+.vscode/

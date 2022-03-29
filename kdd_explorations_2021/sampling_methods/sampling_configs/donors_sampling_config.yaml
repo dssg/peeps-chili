@@ -1,0 +1,10 @@
+experiment_hash: '10ec0614881ab8f1d97754c863e39fd3' # Experiment hash corresponding to Triage run on non-sampled matrices
+model_group_id: 853 # A base model group id, ideal to put the dummy model group here.
+multiplier: 10000000 # Multiplier for entity_id - the resulting entity_ids are used for sampled matrices
+base_dir: '/mnt/data/experiment_data/donors'  # Base directory from where original train and test matrices should be read.
+orig_data_name: 'donors_original' # Directory where matrices are stored. base_dir+'/'+orig_data_name gives you the dir for the matrices
+demo_table: 'hemank_bias_original.entity_demos3'  #Demographics table containing information about entities
+orig_demo_col: 'prstat_entity_id_1d_poverty_highest poverty_max'  # Column for demographics
+demo_col: 'plevel'  # Name of demographic column
+demo_permutations: ['highest', 'not_highest'] # Different values demographic column can obtain
+label: 'outcome'  # Column name for label information in matrix. (Y=0/1)
