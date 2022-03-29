@@ -19,7 +19,7 @@ WITH ref_models_pre AS (
     JOIN model_metadata.models m USING(model_id)
     JOIN model_metadata.model_groups mg USING(model_group_id)
 )
-SELECT p.entity_id,
+SELECT DISTINCT p.entity_id,
 p.as_of_date,
 replace(plevel_2way, ' ', '_') as plevel
 from test_results.predictions p

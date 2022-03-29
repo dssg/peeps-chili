@@ -1,4 +1,6 @@
 # ignore everything in the following folders
+# data/**
+>>>>>>> master
 logs/**
 references/**
 results/**
