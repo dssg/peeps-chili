@@ -11,7 +11,7 @@ jupyter-core==4.6.3
 matplotlib==2.1.2
 nbconvert==5.6.1
 nbformat==5.0.6
-notebook==6.0.3
+notebook==6.4.10
 numpy==1.15.2
 ohio==0.5.0
 pandas==0.23.4
