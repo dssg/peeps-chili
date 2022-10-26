@@ -7,7 +7,9 @@ CREATE TABLE {{ schema }}.{{ suffix }}_group_recalls AS
          MAX(rr.model_group_id) AS model_group_id_demo, -- max over identical values
          1.0000*COUNT(*)/gn.list_size AS frac_demo,
          MAX(rr.recall_demo_rolling) AS group_recall, 
-         MIN(rr.score) AS group_score_min
+         MIN(rr.score) AS group_score_min, 
+         AVG(rr.score) as group_score_mean, 
+         MAX(rr.precision_demo_rolling) as group_precision         
   FROM {{schema}}.tmp_bias_rolling_recall rr
   JOIN {{ schema }}.{{ suffix }}_group_nums gn
     ON gn.model_group_id = rr.model_group_id
@@ -23,7 +25,7 @@ CREATE TABLE {{ schema }}.{{ suffix }}_censored_group_recalls AS
   -- limit recall values to a small non-zero value to avoid divide by zero errors calculating ratios
   -- this seems somewhat more principled to me than coercing these cases to NULL since doing so could
   -- lead to their being excluded from downstream analyses.
-  SELECT method, model_id, past_train_end_time, train_end_time, list_size, demo_value, model_group_id_demo, frac_demo, group_score_min, 
+  SELECT method, model_id, past_train_end_time, train_end_time, list_size, demo_value, model_group_id_demo, frac_demo, group_score_min, group_score_mean, group_precision, 
          CASE WHEN group_recall = 0 THEN 0.00001 ELSE group_recall END AS group_recall
   FROM {{ schema }}.{{ suffix }}_group_recalls
 ); 
@@ -42,6 +44,8 @@ CREATE TABLE {{ schema }}.{{ suffix }}_recall_ratio AS
          {% for demo in demo_values %}
          , MAX(CASE WHEN gr1.demo_value='{{demo}}' THEN gr1.frac_demo ELSE NULL END) AS frac_{{demo}}
          , MAX(CASE WHEN gr1.demo_value='{{demo}}' THEN gr1.group_score_min ELSE NULL END) AS min_score_{{demo}}
+         , MAX(CASE WHEN gr1.demo_value='{{demo}}' THEN gr1.group_score_mean ELSE NULL END) AS mean_score_{{demo}}
+         , MAX(CASE WHEN gr1.demo_value='{{demo}}' THEN gr1.group_precision ELSE NULL END) AS precision_{{demo}}
          , MAX(CASE WHEN gr1.demo_value='{{demo}}' THEN gr1.group_recall ELSE NULL END) AS recall_{{demo}}
          , MAX(CASE WHEN gr1.demo_value='{{demo}}' THEN gr1.model_group_id_demo ELSE NULL END) AS model_group_id_{{demo}}
          {% endfor %}
@@ -83,6 +87,8 @@ SELECT perf.*, rat.max_recall_ratio
          {% for demo in demo_values %}
        , rat.frac_{{demo}}
        , rat.min_score_{{demo}}
+       , rat.mean_score_{{demo}}
+       , rat.precision_{{demo}}
        , rat.recall_{{demo}}
        , rat.model_group_id_{{demo}}
          {% endfor %}
@@ -236,6 +242,8 @@ SELECT o.model_id, m.model_group_id, m.train_end_time,
          {% for demo in demo_values %}
        , o.frac_{{demo}} AS base_frac_{{demo}}
        , o.min_score_{{demo}} AS base_min_score_{{demo}}
+       , o.mean_score_{{demo}} AS base_mean_score_{{demo}}
+       , o.precision_{{demo}} AS base_precision_{{demo}}
        , o.recall_{{demo}} AS base_recall_{{demo}}
          {% endfor %}
 
@@ -247,6 +255,8 @@ SELECT o.model_id, m.model_group_id, m.train_end_time,
          {% for demo in demo_values %}
        , a.frac_{{demo}} AS adj_frac_{{demo}}
        , a.min_score_{{demo}} AS adj_min_score_{{demo}}
+       , a.mean_score_{{demo}} AS adj_mean_score_{{demo}}
+       , a.precision_{{demo}} AS adj_precision_{{demo}}
        , a.recall_{{demo}} AS adj_recall_{{demo}}
          {% endfor %}
 
