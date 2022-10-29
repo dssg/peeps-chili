@@ -32,7 +32,8 @@ tmp2 AS (
     SELECT gn.method, CASE WHEN gn.method LIKE 'composite%%' THEN NULL ELSE rr.model_id END AS model_id,
          gn.past_train_end_time, rr.train_end_time, gn.list_size, rr.demo_value,
          MAX(rr.model_group_id) AS model_group_id_demo, -- max over identical values, 
-         COUNT(*)/AVG(rr.e_num) AS group_positive_rate
+         COUNT(*)/AVG(rr.e_num) AS group_prevalence, 
+         AVG(rr.label_value) AS group_positive_rate
       FROM ({{ schema }}.tmp_bias_rolling_recall tbrr join tmp_positive_perc on tmp_positive_perc.train_end_time_1 = tbrr.train_end_time) rr
       JOIN {{ schema }}.{{ suffix }}_group_nums gn
         ON gn.model_group_id = rr.model_group_id
@@ -49,7 +50,7 @@ CREATE TABLE {{ schema }}.{{ suffix }}_censored_group_recalls AS
   -- limit recall values to a small non-zero value to avoid divide by zero errors calculating ratios
   -- this seems somewhat more principled to me than coercing these cases to NULL since doing so could
   -- lead to their being excluded from downstream analyses.
-  SELECT method, model_id, past_train_end_time, train_end_time, list_size, demo_value, model_group_id_demo, frac_demo, group_score_min, group_score_mean, group_precision, group_positive_rate, 
+  SELECT method, model_id, past_train_end_time, train_end_time, list_size, demo_value, model_group_id_demo, frac_demo, group_score_min, group_score_mean, group_precision, group_prevalence, group_positive_rate, 
          CASE WHEN group_recall = 0 THEN 0.00001 ELSE group_recall END AS group_recall
   FROM {{ schema }}.{{ suffix }}_intermediate_group_recalls
 ); 
@@ -70,6 +71,7 @@ CREATE TABLE {{ schema }}.{{ suffix }}_recall_ratio AS
          , MAX(CASE WHEN gr1.demo_value='{{demo}}' THEN gr1.group_score_min ELSE NULL END) AS min_score_{{demo}}
          , MAX(CASE WHEN gr1.demo_value='{{demo}}' THEN gr1.group_score_mean ELSE NULL END) AS mean_score_{{demo}}
          , MAX(CASE WHEN gr1.demo_value='{{demo}}' THEN gr1.group_precision ELSE NULL END) AS precision_{{demo}}
+         , MAX(CASE WHEN gr1.demo_value='{{demo}}' THEN gr1.group_prevalence ELSE NULL END) AS prevalence_{{demo}}
          , MAX(CASE WHEN gr1.demo_value='{{demo}}' THEN gr1.group_positive_rate ELSE NULL END) AS positive_rate_{{demo}}
          , MAX(CASE WHEN gr1.demo_value='{{demo}}' THEN gr1.group_recall ELSE NULL END) AS recall_{{demo}}
          , MAX(CASE WHEN gr1.demo_value='{{demo}}' THEN gr1.model_group_id_demo ELSE NULL END) AS model_group_id_{{demo}}
@@ -114,6 +116,7 @@ SELECT perf.*, rat.max_recall_ratio
        , rat.min_score_{{demo}}
        , rat.mean_score_{{demo}}
        , rat.precision_{{demo}}
+       , rat.prevalence_{{demo}}
        , rat.positive_rate_{{demo}}
        , rat.recall_{{demo}}
        , rat.model_group_id_{{demo}}
@@ -270,6 +273,7 @@ SELECT o.model_id, m.model_group_id, m.train_end_time,
        , o.min_score_{{demo}} AS base_min_score_{{demo}}
        , o.mean_score_{{demo}} AS base_mean_score_{{demo}}
        , o.precision_{{demo}} AS base_precision_{{demo}}
+       , o.prevalence_{{demo}} AS base_prevalence_{{demo}} 
        , o.positive_rate_{{demo}} AS base_positive_rate_{{demo}}
        , o.recall_{{demo}} AS base_recall_{{demo}}
          {% endfor %}
@@ -284,6 +288,7 @@ SELECT o.model_id, m.model_group_id, m.train_end_time,
        , a.min_score_{{demo}} AS adj_min_score_{{demo}}
        , a.mean_score_{{demo}} AS adj_mean_score_{{demo}}
        , a.precision_{{demo}} AS adj_precision_{{demo}}
+       , a.prevalence_{{demo}} AS adj_prevalence_{{demo}}
        , a.positive_rate_{{demo}} AS adj_positive_rate_{{demo}}
        , a.recall_{{demo}} AS adj_recall_{{demo}}
          {% endfor %}
