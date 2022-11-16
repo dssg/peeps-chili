@@ -9,7 +9,6 @@ CREATE TABLE {{ schema }}.{{ suffix }}_group_recalls AS
          MAX(rr.recall_demo_rolling) AS group_recall, 
          MIN(rr.score) AS group_score_min, 
          AVG(rr.score) as group_score_mean, 
-         MAX(rr.precision_demo_rolling) as group_precision         
   FROM {{schema}}.tmp_bias_rolling_recall rr
   JOIN {{ schema }}.{{ suffix }}_group_nums gn
     ON gn.model_group_id = rr.model_group_id
@@ -27,20 +26,53 @@ WITH tmp_positive_perc AS (
     SELECT rr.train_end_time as train_end_time_1,  
          count(distinct entity_id) as e_num
       FROM {{schema}}.tmp_bias_rolling_recall rr
+      GROUP BY 1),
+tmp0 AS (
+	select rr.train_end_time as train_end_time_1,  
+         count(distinct entity_id) as p_e_num
+      FROM {{schema}}.tmp_bias_rolling_recall rr where rr.label_value=1
       GROUP BY 1), 
-tmp2 AS (
+tmp1 AS(
+	select * from tmp_positive_perc natural join tmp0
+), 
+tmp2 AS(
+    SELECT gn.method, CASE WHEN gn.method LIKE 'composite%%' THEN NULL ELSE rr.model_id END AS model_id,
+         gn.past_train_end_time, rr.train_end_time, gn.list_size, rr.demo_value,
+         MAX(rr.model_group_id) AS model_group_id_demo, -- max over identical values, 
+         COUNT(*)/AVG(rr.p_e_num) AS group_positive_prevalence 
+      FROM ({{ schema }}.tmp_bias_rolling_recall tbrr join tmp1 on tmp1.train_end_time_1 = tbrr.train_end_time) rr
+      JOIN {{ schema }}.{{ suffix }}_group_nums gn
+        ON gn.model_group_id = rr.model_group_id
+        AND gn.future_train_end_time = rr.train_end_time
+        AND gn.demo_value = rr.demo_value
+      where rr.label_value = 1
+      GROUP BY 1,2,3,4,5,6), 
+tmp3 AS (
     SELECT gn.method, CASE WHEN gn.method LIKE 'composite%%' THEN NULL ELSE rr.model_id END AS model_id,
          gn.past_train_end_time, rr.train_end_time, gn.list_size, rr.demo_value,
          MAX(rr.model_group_id) AS model_group_id_demo, -- max over identical values, 
          COUNT(*)/AVG(rr.e_num) AS group_prevalence, 
          AVG(rr.label_value) AS group_positive_rate
-      FROM ({{ schema }}.tmp_bias_rolling_recall tbrr join tmp_positive_perc on tmp_positive_perc.train_end_time_1 = tbrr.train_end_time) rr
+      FROM ({{ schema }}.tmp_bias_rolling_recall tbrr join tmp1 on tmp1.train_end_time_1 = tbrr.train_end_time) rr
       JOIN {{ schema }}.{{ suffix }}_group_nums gn
         ON gn.model_group_id = rr.model_group_id
         AND gn.future_train_end_time = rr.train_end_time
         AND gn.demo_value = rr.demo_value
-      GROUP BY 1,2,3,4,5,6)
-SELECT * from {{ schema }}.{{ suffix }}_group_recalls NATURAL JOIN tmp2
+      GROUP BY 1,2,3,4,5,6), 
+tmp4 AS (
+   SELECT gn.method, CASE WHEN gn.method LIKE 'composite%%' THEN NULL ELSE rr.model_id END AS model_id,
+         gn.past_train_end_time, rr.train_end_time, gn.list_size, rr.demo_value,
+         MAX(rr.model_group_id) AS model_group_id_demo, -- max over identical values
+         MAX(rr.precision_demo_rolling) as group_precision         
+    FROM {{schema}}.tmp_bias_rolling_recall rr
+    JOIN {{ schema }}.{{ suffix }}_group_nums gn
+    ON gn.model_group_id = rr.model_group_id
+    AND gn.future_train_end_time = rr.train_end_time
+    AND gn.demo_value = rr.demo_value
+    AND rr.num_demo_rolling = gn.group_k
+  GROUP BY 1,2,3,4,5,6
+)
+SELECT * from {{ schema }}.{{ suffix }}_group_recalls NATURAL JOIN tmp2 NATURAL JOIN tmp3 NATURAL JOIN tmp4
 );
 
 
@@ -50,7 +82,7 @@ CREATE TABLE {{ schema }}.{{ suffix }}_censored_group_recalls AS
   -- limit recall values to a small non-zero value to avoid divide by zero errors calculating ratios
   -- this seems somewhat more principled to me than coercing these cases to NULL since doing so could
   -- lead to their being excluded from downstream analyses.
-  SELECT method, model_id, past_train_end_time, train_end_time, list_size, demo_value, model_group_id_demo, frac_demo, group_score_min, group_score_mean, group_precision, group_prevalence, group_positive_rate, 
+  SELECT method, model_id, past_train_end_time, train_end_time, list_size, demo_value, model_group_id_demo, frac_demo, group_score_min, group_score_mean, group_precision, group_prevalence, group_positive_rate, group_positive_prevalence,  
          CASE WHEN group_recall = 0 THEN 0.00001 ELSE group_recall END AS group_recall
   FROM {{ schema }}.{{ suffix }}_intermediate_group_recalls
 ); 
@@ -72,6 +104,7 @@ CREATE TABLE {{ schema }}.{{ suffix }}_recall_ratio AS
          , MAX(CASE WHEN gr1.demo_value='{{demo}}' THEN gr1.group_score_mean ELSE NULL END) AS mean_score_{{demo}}
          , MAX(CASE WHEN gr1.demo_value='{{demo}}' THEN gr1.group_precision ELSE NULL END) AS precision_{{demo}}
          , MAX(CASE WHEN gr1.demo_value='{{demo}}' THEN gr1.group_prevalence ELSE NULL END) AS prevalence_{{demo}}
+         , MAX(CASE WHEN gr1.demo_value='{{demo}}' THEN gr1.group_positive_prevalence ELSE NULL END) AS positive_prevalence_{{demo}}
          , MAX(CASE WHEN gr1.demo_value='{{demo}}' THEN gr1.group_positive_rate ELSE NULL END) AS positive_rate_{{demo}}
          , MAX(CASE WHEN gr1.demo_value='{{demo}}' THEN gr1.group_recall ELSE NULL END) AS recall_{{demo}}
          , MAX(CASE WHEN gr1.demo_value='{{demo}}' THEN gr1.model_group_id_demo ELSE NULL END) AS model_group_id_{{demo}}
@@ -117,6 +150,7 @@ SELECT perf.*, rat.max_recall_ratio
        , rat.mean_score_{{demo}}
        , rat.precision_{{demo}}
        , rat.prevalence_{{demo}}
+       , rat.positive_prevalence_{{demo}}
        , rat.positive_rate_{{demo}}
        , rat.recall_{{demo}}
        , rat.model_group_id_{{demo}}
@@ -274,6 +308,7 @@ SELECT o.model_id, m.model_group_id, m.train_end_time,
        , o.mean_score_{{demo}} AS base_mean_score_{{demo}}
        , o.precision_{{demo}} AS base_precision_{{demo}}
        , o.prevalence_{{demo}} AS base_prevalence_{{demo}} 
+       , o.positive_prevalence_{{demo}} AS base_positive_prevalence_{{demo}} 
        , o.positive_rate_{{demo}} AS base_positive_rate_{{demo}}
        , o.recall_{{demo}} AS base_recall_{{demo}}
          {% endfor %}
@@ -289,6 +324,7 @@ SELECT o.model_id, m.model_group_id, m.train_end_time,
        , a.mean_score_{{demo}} AS adj_mean_score_{{demo}}
        , a.precision_{{demo}} AS adj_precision_{{demo}}
        , a.prevalence_{{demo}} AS adj_prevalence_{{demo}}
+       , a.positive_prevalence_{{demo}} AS adj_positive_prevalence_{{demo}} 
        , a.positive_rate_{{demo}} AS adj_positive_rate_{{demo}}
        , a.recall_{{demo}} AS adj_recall_{{demo}}
          {% endfor %}
