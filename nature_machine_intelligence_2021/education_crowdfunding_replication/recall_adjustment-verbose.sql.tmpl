@@ -8,7 +8,7 @@ CREATE TABLE {{ schema }}.{{ suffix }}_group_recalls AS
          1.0000*COUNT(*)/gn.list_size AS frac_demo,
          MAX(rr.recall_demo_rolling) AS group_recall, 
          MIN(rr.score) AS group_score_min, 
-         AVG(rr.score) as group_score_mean, 
+         AVG(rr.score) as group_score_mean 
   FROM {{schema}}.tmp_bias_rolling_recall rr
   JOIN {{ schema }}.{{ suffix }}_group_nums gn
     ON gn.model_group_id = rr.model_group_id
