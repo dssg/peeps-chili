@@ -41,6 +41,7 @@ ALTER TABLE {{schema}}.tmp_bias_models ADD PRIMARY KEY (model_id);
 
 DROP TABLE IF EXISTS {{schema}}.tmp_bias_end_time_weights;
 CREATE TABLE {{schema}}.tmp_bias_end_time_weights AS 
-	(SELECT DISTINCT train_end_time, future_train_end_time,  
-    {{ date_weight_case_str }}
-    AS weight FROM {{ schema }}.model_adjustment_group_k_plevel CROSS JOIN {{schema}}.tmp_bias_end_times ORDER BY train_end_time); 
+	(SELECT DISTINCT train_end_time, future_train_end_time, 
+    {{ date_weight_past_train_end_time_case_str }} AS past_train_end_time, 
+    {{ date_weight_case_str }} AS weight 
+    FROM {{ schema }}.model_adjustment_group_k_plevel CROSS JOIN {{schema}}.tmp_bias_end_times ORDER BY train_end_time); 

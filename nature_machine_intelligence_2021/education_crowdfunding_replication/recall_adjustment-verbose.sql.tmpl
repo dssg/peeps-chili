@@ -253,12 +253,6 @@ CREATE TABLE {{ schema }}.tmp_bias_mod_overall_group_nums AS (
     GROUP BY 1,2,3,4,5,6
 );
 
-INSERT INTO {{ schema }}.model_adjustment_group_k_plevel
-SELECT gn.model_group_id , gn.future_train_end_time as train_end_time, gn.demo_value, gn.group_k 
-  FROM {{ schema }}.tmp_bias_mod_overall_group_nums gn
- WHERE (gn.model_group_id , gn.future_train_end_time , gn.demo_value, gn.group_k) NOT IN (SELECT *
-                       FROM {{ schema }}.model_adjustment_group_k_plevel); 
-
 {{ create_tables('tmp_bias_mod_overall') }}
 
 DROP TABLE IF EXISTS {{schema}}.tmp_bias_mod_overall;
@@ -287,6 +281,23 @@ CREATE TABLE {{ schema }}.tmp_bias_mod_adjusted_group_nums AS (
     GROUP BY 1,2,3,4,5,6
 ); 
 
+INSERT INTO {{ schema }}.model_adjustment_group_k_plevel
+WITH tmp_grp_nums AS(
+SELECT 'adjusted'::VARCHAR(256) AS method, rr.model_group_id, et.past_train_end_time, et.future_train_end_time, 
+           list_size, rr.demo_value, COUNT(*) AS group_k
+    FROM {{schema}}.tmp_bias_rolling_recall rr
+    JOIN {{schema}}.tmp_bias_end_times et ON rr.train_end_time = et.future_train_end_time
+    CROSS JOIN {{schema}}.tmp_bias_list_sizes
+    WHERE rn_recall <= list_size
+    GROUP BY 1,2,3,4,5,6
+
+)
+SELECT gn.model_group_id , gn.future_train_end_time as train_end_time, gn.demo_value, gn.group_k 
+  FROM tmp_grp_nums gn
+ WHERE (gn.model_group_id , gn.future_train_end_time , gn.demo_value) NOT IN 
+     (SELECT gkp.model_group_id , gkp.train_end_time , gkp.demo_value 
+                       FROM {{ schema }}.model_adjustment_group_k_plevel gkp); 
+
 {{ create_tables('tmp_bias_mod_adjusted') }}
 
 DROP TABLE IF EXISTS {{schema}}.tmp_bias_mod_adjusted;
@@ -296,13 +307,36 @@ AS
 
 CREATE INDEX ON {{schema}}.tmp_bias_mod_adjusted(model_id, list_size, metric, parameter);
 
+-- Models Performance After Multi Time Step Adjustment
+DROP TABLE IF EXISTS {{ schema }}.tmp_bias_mod_multi_adjusted_group_nums;
+CREATE TABLE {{ schema }}.tmp_bias_mod_multi_adjusted_group_nums AS (
+    WITH tmp_group_k AS (
+        SELECT model_group_id , train_end_time , demo_value , CASE WHEN demo_value  = 'highest' THEN CEILING(AVG(group_k)) 
+        ELSE FLOOR(AVG(group_k)) END AS group_k 
+        FROM {{schema}}.model_adjustment_group_k_plevel group by 1, 2, 3 order by 1, 2, 3
+        )
+    SELECT 'combined' as method, model_group_id, past_train_end_time, future_train_end_time, list_size, demo_value,
+        CASE WHEN demo_value='highest' then CEILING(SUM(weight * group_k)) ELSE FLOOR(SUM(weight * group_k)) END AS group_k
+        FROM (tmp_group_k NATURAL JOIN {{schema}}.tmp_bias_end_time_weights tbetw) 
+        CROSS JOIN {{schema}}.tmp_bias_list_sizes tbls group by 1, 2, 3, 4, 5, 6 order by model_group_id, future_train_end_time
+);
+
+{{ create_tables('tmp_bias_mod_multi_adjusted') }}
+
+DROP TABLE IF EXISTS {{schema}}.tmp_bias_mod_multi_adjusted;
+CREATE TABLE {{schema}}.tmp_bias_mod_multi_adjusted
+AS
+( {{ results_sql('tmp_bias_mod_multi_adjusted') }} ); 
+
+CREATE INDEX ON {{schema}}.tmp_bias_mod_multi_adjusted(model_id, list_size, metric, parameter);
+
 
 -- Combine adjusted and unadjusted
 DROP TABLE IF EXISTS {{schema}}.model_adjustment_results_{{demo_col}};
 CREATE TABLE {{schema}}.model_adjustment_results_{{demo_col}}
 AS
 SELECT o.model_id, m.model_group_id, m.train_end_time,
-       o.list_size, a.past_train_end_time, o.metric, o.parameter,
+       o.list_size, a.past_train_end_time, ma.past_train_end_time as multi_adj_past_train_end_time, o.metric, o.parameter,
        -- unadjusted (base) values
        o.value AS base_value, o.max_recall_ratio AS base_max_recall_ratio
          {% for demo1, demo2 in demo_permutations %}
@@ -334,15 +368,32 @@ SELECT o.model_id, m.model_group_id, m.train_end_time,
        , a.positive_rate_{{demo}} AS adj_positive_rate_{{demo}}
        , a.recall_{{demo}} AS adj_recall_{{demo}}
          {% endfor %}
+         
+       -- multi adjusted values
+       , ma.value AS multi_adj_value, ma.max_recall_ratio AS multi_adj_max_recall_ratio
+         {% for demo1, demo2 in demo_permutations %}
+       , ma.recall_{{demo1}}_to_{{demo2}} AS multi_adj_recall_{{demo1}}_to_{{demo2}}
+         {% endfor %}
+         {% for demo in demo_values %}
+       , ma.frac_{{demo}} AS multi_adj_frac_{{demo}}
+       , ma.min_score_{{demo}} AS multi_adj_min_score_{{demo}}
+       , ma.mean_score_{{demo}} AS multi_adj_mean_score_{{demo}}
+       , ma.precision_{{demo}} AS multi_adj_precision_{{demo}}
+       , ma.prevalence_{{demo}} AS multi_adj_prevalence_{{demo}}
+       , ma.positive_prevalence_{{demo}} AS multi_adj_positive_prevalence_{{demo}} 
+       , ma.positive_rate_{{demo}} AS multi_adj_positive_rate_{{demo}}
+       , ma.recall_{{demo}} AS multi_adj_recall_{{demo}}
+         {% endfor %}
+
 
        -- diffs
        , a.value - o.value AS value_diff,
        a.max_recall_ratio - o.max_recall_ratio AS recall_ratio_diff
 FROM {{schema}}.tmp_bias_mod_overall o
 JOIN {{schema}}.tmp_bias_mod_adjusted a USING(model_id, list_size, metric, parameter)
+JOIN {{schema}}.tmp_bias_mod_multi_adjusted ma USING(model_id, list_size, metric, parameter)
 JOIN {{schema}}.tmp_bias_models m USING(model_id)
 ;
-
 
 
 -- DWORK-"LIGHT" COMPOSITE MODEL
