@@ -43,7 +43,7 @@ for i, date in enumerate(date_list):
     if i <= 1:
         date_weights[date] = {date_list[max(0, i-1)]: 1.0, "past_train_end_time": date_list[max(0, i-1)]}
     else:
-        date_weights[date] = {date_list[i-1]: 0.01, date_list[i-2]: 0.99, "past_train_end_time": date_list[i-1]}
+        date_weights[date] = {date_list[i-1]: 0.99, date_list[i-2]: 0.01, "past_train_end_time": date_list[i-1]}
 
 
 

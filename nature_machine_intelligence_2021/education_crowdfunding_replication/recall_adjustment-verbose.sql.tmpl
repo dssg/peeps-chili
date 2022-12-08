@@ -293,10 +293,7 @@ SELECT 'adjusted'::VARCHAR(256) AS method, rr.model_group_id, et.past_train_end_
 
 )
 SELECT gn.model_group_id , gn.future_train_end_time as train_end_time, gn.demo_value, gn.group_k 
-  FROM tmp_grp_nums gn
- WHERE (gn.model_group_id , gn.future_train_end_time , gn.demo_value) NOT IN 
-     (SELECT gkp.model_group_id , gkp.train_end_time , gkp.demo_value 
-                       FROM {{ schema }}.model_adjustment_group_k_plevel gkp); 
+  FROM tmp_grp_nums gn;
 
 {{ create_tables('tmp_bias_mod_adjusted') }}
 
