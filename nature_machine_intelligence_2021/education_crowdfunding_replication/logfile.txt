@@ -1,0 +1,14 @@
+screen_script.py:52: SADeprecationWarning: Calling URL() directly is deprecated and will be disabled in a future release.  The public constructor for URL is now the URL.create() method.
+  dburl = sqlalchemy.engine.url.URL(
+[('2011-03-01', '2011-03-01'), ('2011-03-01', '2011-07-01')]
+/home/dhananja/.pyenv/versions/3.8.1/lib/python3.8/site-packages/dateparser/date_parser.py:35: PytzUsageWarning: The localize method is no longer necessary, as this time zone supports the fold attribute (PEP 495). For more details on migrating to a PEP 495-compliant implementation, see https://pytz-deprecation-shim.readthedocs.io/en/latest/migration.html
+  date_obj = stz.localize(date_obj)
+[('2011-05-01', '2011-05-01'), ('2011-05-01', '2011-09-01')]
+[('2011-07-01', '2011-07-01'), ('2011-07-01', '2011-11-01')]
+[('2011-09-01', '2011-09-01'), ('2011-09-01', '2012-01-01')]
+[('2011-11-01', '2011-11-01'), ('2011-11-01', '2012-03-01')]
+[('2012-01-01', '2012-01-01'), ('2012-01-01', '2012-05-01')]
+[('2012-03-01', '2012-03-01'), ('2012-03-01', '2012-07-01')]
+[('2012-05-01', '2012-05-01'), ('2012-05-01', '2012-09-01')]
+[('2012-07-01', '2012-07-01'), ('2012-07-01', '2012-11-01')]
+[('2012-09-01', '2012-09-01'), ('2012-09-01', '2013-01-01')]

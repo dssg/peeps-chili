@@ -17,26 +17,27 @@ from ohio.ext.numpy import pg_copy_to_table
 
 date_pairs_all = [
  ('2011-03-01', '2011-03-01'),
- ('2011-03-01', '2011-07-01'),
  ('2011-05-01', '2011-05-01'),
- ('2011-05-01', '2011-09-01'),
  ('2011-07-01', '2011-07-01'),
- ('2011-07-01', '2011-11-01'),
  ('2011-09-01', '2011-09-01'),
- ('2011-09-01', '2012-01-01'),
  ('2011-11-01', '2011-11-01'),
- ('2011-11-01', '2012-03-01'),
  ('2012-01-01', '2012-01-01'),
- ('2012-01-01', '2012-05-01'),
  ('2012-03-01', '2012-03-01'),
- ('2012-03-01', '2012-07-01'),
  ('2012-05-01', '2012-05-01'),
- ('2012-05-01', '2012-09-01'),
  ('2012-07-01', '2012-07-01'),
- ('2012-07-01', '2012-11-01'),
  ('2012-09-01', '2012-09-01'),
+ ('2011-03-01', '2011-07-01'),
+ ('2011-05-01', '2011-09-01'),
+ ('2011-07-01', '2011-11-01'),
+ ('2011-09-01', '2012-01-01'),
+ ('2011-11-01', '2012-03-01'),
+ ('2012-01-01', '2012-05-01'),
+ ('2012-03-01', '2012-07-01'),
+ ('2012-05-01', '2012-09-01'),
+ ('2012-07-01', '2012-11-01'),
  ('2012-09-01', '2013-01-01')
  ]
+
 date_list = ['2011-03-01', '2011-05-01', '2011-07-01', '2011-09-01', '2011-11-01', '2012-01-01', '2012-03-01', '2012-05-01', '2012-07-01', '2012-09-01', '2012-11-01', '2013-01-01']
 date_weights = {}
 for i, date in enumerate(date_list):
@@ -95,6 +96,7 @@ def create_entity_demos(engine, params, entity_demos):
 
 engine_donors.execute('TRUNCATE TABLE bias_results.composite_results_plevel;')
 engine_donors.execute('TRUNCATE TABLE bias_results.model_adjustment_results_plevel;')
+engine_donors.execute('TRUNCATE TABLE bias_working.model_adjustment_group_k_plevel;')
 engine_donors.execute('COMMIT;')
 
 
@@ -177,10 +179,6 @@ for dp_idx in range(10):
         SELECT * FROM bias_working.composite_results_plevel;
     """)
     
-    engine_donors.execute("""
-        INSERT INTO bias_results.model_adjustment_group_k_plevel 
-        SELECT * FROM bias_working.model_adjustment_group_k_plevel gkp WHERE (gkp.model_group_id, gkp.train_end_time, gkp.demo_value) NOT IN (SELECT model_group_id, train_end_time, demo_value FROM bias_results.model_adjustment_group_k_plevel)
-    """)
     
     engine_donors.execute("""
         INSERT INTO bias_results.model_multi_adjustment_results_plevel
