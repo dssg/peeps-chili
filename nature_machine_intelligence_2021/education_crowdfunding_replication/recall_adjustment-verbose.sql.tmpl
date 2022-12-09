@@ -282,18 +282,8 @@ CREATE TABLE {{ schema }}.tmp_bias_mod_adjusted_group_nums AS (
 ); 
 
 INSERT INTO {{ schema }}.model_adjustment_group_k_plevel
-WITH tmp_grp_nums AS(
-SELECT 'adjusted'::VARCHAR(256) AS method, rr.model_group_id, et.past_train_end_time, et.future_train_end_time, 
-           list_size, rr.demo_value, COUNT(*) AS group_k
-    FROM {{schema}}.tmp_bias_rolling_recall rr
-    JOIN {{schema}}.tmp_bias_end_times et ON rr.train_end_time = et.future_train_end_time
-    CROSS JOIN {{schema}}.tmp_bias_list_sizes
-    WHERE rn_recall <= list_size
-    GROUP BY 1,2,3,4,5,6
-
-)
 SELECT gn.model_group_id , gn.future_train_end_time as train_end_time, gn.demo_value, gn.group_k 
-  FROM tmp_grp_nums gn;
+FROM {{schema}}.tmp_bias_mod_adjusted_group_nums gn;
 
 {{ create_tables('tmp_bias_mod_adjusted') }}
 
