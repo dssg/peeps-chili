@@ -282,7 +282,7 @@ CREATE TABLE {{ schema }}.tmp_bias_mod_adjusted_group_nums AS (
 ); 
 
 INSERT INTO {{ schema }}.model_adjustment_group_k_plevel
-SELECT gn.model_group_id , gn.future_train_end_time as train_end_time, gn.demo_value, gn.group_k 
+SELECT gn.model_group_id , gn.past_train_end_time as train_end_time, gn.demo_value, gn.group_k 
 FROM {{schema}}.tmp_bias_mod_adjusted_group_nums gn;
 
 {{ create_tables('tmp_bias_mod_adjusted') }}
