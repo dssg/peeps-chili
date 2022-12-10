@@ -1,10 +1,20 @@
+import pandas as pd
+import numpy as np
+import statsmodels.api as sm
+import statsmodels.formula.api as smf
+
+import os
+import yaml
+import sqlalchemy
+
 
 from itertools import permutations
 from jinja2 import Template
 import dateparser
-import pandas as pd
-import numpy as np
+
+
 from ohio.ext.numpy import pg_copy_to_table
+
 try:
     import matplotlib.pyplot as plt
 except (ImportError, RuntimeError) as e:
@@ -27,73 +37,72 @@ ENTITY_DEMO_FILES = {
         }
 }
 
+
+
 class RecallAdjuster(object):
     def __init__(
         self,
         engine,
-        pg_role,
-        schema,
-        experiment_hashes,
-        date_pairs,
-        list_sizes,
-        entity_demos,
-        demo_col,
-        sample_weights=None,
-        bootstrap_weights=None,
-        decoupled_experiments=None,
-        decoupled_entity_demos=None
+        params,
+        pause_phases=False, 
+        alternate_save_names=[]
         ):
         """
         Arguments:
             engine: 
                 An engine for a postgres database
-            pg_role:
-                Role to use in postgres
-            schema:
-                Schema for table creation
-            experiment_hashes:
-                A list of strings with triage experiments to include
-            date_pairs:
-                A list of tuples of train_end_times (as strings). The first should be the date to use
-                to make adjustments and the second a future date for evaluation.
-            list_sizes:
-                A list of integers, the sizes of lists to generate.
-            entity_demos:
-                Either a table name (in format "schema.table_name") or "joco" to use
-                JoCo-specific code to create this table on the fly.
-            demo_col:
-                Column name containing demographic data on which to make adjustments
-            sample_weights:
-                Optional dictionary of demo values to weight for subsampling. Excluded demo values
-                will be included in their entirely with no sampling. Weights should be a value
-                between 0 and 1.0, reflecting the fraction of that demographic to include.
-            decoupled_experiments:
-                Optional list of tuples of (experiment_hash, demo_value) that identify decoupled
-                experiments with models run using data only from each subgroup. Data from these
-                experiments will be used only to create a composite that allows EITHER the decoupled
-                or full models to be used for each subgroup. Multiple experiments can be specified
-                for a given demo_value, but all demo_values must be included.
-            decoupled_entity_demos:
-                Optional "schema.table_name" for a separate entity_demos table to be used for the decoupled
-                experiments, for instance in cases where entity_ids may differ between modeling runs
-                such as is the case with JoCo matches. If specified, must be pre-computed.
+            params:
+                Dictionary with following properly defined
+                pg_role:
+                    Role to use in postgres
+                schema:
+                    Schema for table creation
+                experiment_hashes:
+                    A list of strings with triage experiments to include
+                date_pairs:
+                    A list of tuples of train_end_times (as strings). The first should be the date to use
+                    to make adjustments and the second a future date for evaluation.
+                list_sizes:
+                    A list of integers, the sizes of lists to generate.
+                entity_demos:
+                    Either a table name (in format "schema.table_name") or "joco" to use
+                    JoCo-specific code to create this table on the fly.
+                demo_col:
+                    Column name containing demographic data on which to make adjustments
+                sample_weights:
+                    Optional dictionary of demo values to weight for subsampling. Excluded demo values
+                    will be included in their entirely with no sampling. Weights should be a value
+                    between 0 and 1.0, reflecting the fraction of that demographic to include.
+                decoupled_experiments:
+                    Optional list of tuples of (experiment_hash, demo_value) that identify decoupled
+                    experiments with models run using data only from each subgroup. Data from these
+                    experiments will be used only to create a composite that allows EITHER the decoupled
+                    or full models to be used for each subgroup. Multiple experiments can be specified
+                    for a given demo_value, but all demo_values must be included.
+                decoupled_entity_demos:
+                    Optional "schema.table_name" for a separate entity_demos table to be used for the decoupled
+                    experiments, for instance in cases where entity_ids may differ between modeling runs
+                    such as is the case with JoCo matches. If specified, must be pre-computed.
+                entity_demos:
+                    e.g: bias_working.entity_demos
+                weights:
+                    Weighting scheme for multi adjustment as a list of fractions
+                date_list:
+                    List of all dates in increasing order
+                min_separations:
+                    The minimum time we must go back given a future_train_end_time to know we have that data and label set at prediction time of future_train_end_time. If not stated we assume 2
+            pause_phases:
+                True if you want a break after each phase requiring user input to continue
         """
 
         # store parameters
         self.engine = engine.connect()
-        self.params = {}
-        self.params['pg_role'] = pg_role
-        self.params['schema'] = schema
-        if isinstance(experiment_hashes, str):
-            experiment_hashes = [experiment_hashes]
-        self.params['experiment_hashes'] = experiment_hashes
-        if isinstance(date_pairs[0], str):
-            date_pairs = [date_pairs]
-        self.params['date_pairs'] = date_pairs
-        if isinstance(list_sizes, int):
-            list_sizes = [list_sizes]
-        self.params['list_sizes'] = list_sizes
-        self.params['demo_col'] = demo_col
+        self.params = params
+        
+        self.params['date_weights'] = self.get_date_weights()
+        self.params['date_weight_case_str'] = self.get_weight_case_str()
+        self.params['date_weight_past_train_end_time_case_str'] = self.get_weight_past_train_end_time_case_str()
+        
 
         # check consistency of date pairs
         self.validate_dates()
@@ -102,7 +111,11 @@ class RecallAdjuster(object):
         sql = Template(open('recall_adjustment_pre.sql.tmpl', 'r').read()).render(**self.params)
         self.engine.execute(sql)
         self.engine.execute("COMMIT")
+        
+        if pause_phases:
+            input(f"Date Pair: {self.params['date_pairs']} pre sql done")
 
+        entity_demos = self.params['entity_demos']
         if entity_demos.find('.') > -1:
             self.params['entity_demos'] = entity_demos
         elif entity_demos in ENTITY_DEMO_FILES.keys():
@@ -115,38 +128,15 @@ class RecallAdjuster(object):
         res = self.engine.execute(sql).fetchall()
         self.params['demo_values'] = [r[0] for r in res]
         self.params['demo_permutations'] = list(permutations(self.params['demo_values'], 2))
-
-        if sample_weights is not None and bootstrap_weights is not None:
-            raise ValueError('Error: may only specify one resampling strategy: sample_weights or bootstrap_weights!')
-        elif sample_weights is not None:
-            self.params['subsample'] = True
-            self.params['bootstrap'] = False
-            self.params['sample_weights'] = {d: 1.0 for d in self.params['demo_values']}
-            self.params['sample_weights'].update(sample_weights)
-        elif bootstrap_weights is not None:
-            self.params['subsample'] = False
-            self.params['bootstrap'] = True
-            self.ensure_all_demos(list(bootstrap_weights.keys()))
-            assert(sum(bootstrap_weights.values()) == 1.0)
-            self.params['bootstrap_weights'] = bootstrap_weights
-            self.do_bootstrap()
-        else:
-            self.params['subsample'] = False
-            self.params['bootstrap'] = False
-
-        if decoupled_experiments:
-            # check that all demo_values have coverage in decoupled_experiments
-            self.ensure_all_demos([de[1] for de in decoupled_experiments])
-
-            self.params['decoupled_experiments'] = decoupled_experiments
-
-            # default to entity_demos if no decoupled_entity_demos specified
-            self.params['decoupled_entity_demos'] = decoupled_entity_demos or self.params['entity_demos']
+        
 
         # pre-calculate the results for all models, date pairs
-        sql = Template(open('recall_adjustment.sql.tmpl', 'r').read()).render(**self.params)
+        sql = Template(open('recall_adjustment_verbose.sql.tmpl', 'r').read()).render(**self.params)
         self.engine.execute(sql)
         self.engine.execute("COMMIT")
+        
+        if pause_phases:
+            input(f"Date Pair: {self.params['date_pairs']} Adjustment Done")
 
         # store the results to dataframes for subsequent plotting and analysis
         sql = 'SELECT * FROM %s.model_adjustment_results_%s' % (self.params['schema'], self.params['demo_col'])
@@ -154,10 +144,64 @@ class RecallAdjuster(object):
 
         sql = 'SELECT * FROM %s.composite_results_%s' % (self.params['schema'], self.params['demo_col'])
         self.composite_results = pd.read_sql(sql, self.engine)
+        
+        for save_name in alternate_save_names:
+            schema = self.params['schema'] 
+            demo_col = self.params["demo_col"]
+            sql = f"DROP TABLE IF EXISTS {schema}.{save_name}; CREATE {schema}.{save_name} AS SELECT * FROM {schema}.model_adjustment_results_{demo_col}"
 
         self.engine.close()
 
+    
+    def get_date_weights(self):
+        weights = self.params['weights']
+        date_list = self.params['date_list']
+        min_separation = self.params.get('min_separations', 2)
+        date_weights = {}
+        i_lim = len(weights)
+        assert i_lim >= min_separation
+        for i, date in enumerate(date_list):
+            if i < i_lim + min_separation - 1:
+                date_weights[date] = {date_list[0]: 1.0, "past_train_end_time": date_list[0]}
+            else:
+                base = i - min_separation # No matter what latest time we can use is 2 before current month
+                d = {}
+                for j in range(len(weights)):
+                    d[date_list[base - j]] = weights[j]
+                d["past_train_end_time"] = date_list[base] # Should be the most recent date used to compute adjustment
+                date_weights[date] = d
+        return date_weights
 
+    
+    
+    def get_weight_past_train_end_time_case_str(self):
+        date_weights = self.params['date_weights']
+        date_list = self.params['date_list']
+        if len(date_weights) == 0:
+            return f"'{date_list[0]}'::TIMESTAMP"
+        s = "CASE"
+        for future_train_end_time in date_weights:
+            past_train_end_time = date_weights[future_train_end_time]["past_train_end_time"]
+            s += f" WHEN future_train_end_time = '{future_train_end_time}' THEN '{past_train_end_time}'::TIMESTAMP"
+        s += f" ELSE '{date_list[0]}'::TIMESTAMP END"
+        return s
+    
+    def get_weight_case_str(self):
+        date_weights = self.params['date_weights']
+        if len(date_weights) == 0:
+            return "0"
+        s = "CASE"
+        for future_train_end_time in date_weights:
+            for train_end_time in date_weights[future_train_end_time]:
+                if train_end_time == "past_train_end_time":
+                    pass
+                else:
+                    w = date_weights[future_train_end_time][train_end_time]
+                    s += f" WHEN future_train_end_time = '{future_train_end_time}' AND train_end_time = '{train_end_time}' THEN {w} "
+        s += "ELSE 0 END"
+        return s
+
+    
     def ensure_all_demos(self, check_demos):
         all_demos = set(self.params['demo_values'])
         check_demos = set(check_demos)
@@ -382,3 +426,118 @@ class RecallAdjuster(object):
         # plt.show()
 
         return {recall_ratio: ax}
+
+    
+def education_ra_procedure(weights=[0.99, 0.01], alternate_save_names=[], engine_donors=None, config=None):
+    """
+    Because of the size of the data, we're going to do this iteratively over subsets of validation set dates to avoid running into memory issues, but depending on your dataset and database server, you could instead simply run the `RecallAdjuster` once with the full set of date pairs.
+    
+    date_pairs: The code needs a "previous" validation set to learn the group-specific thresholds to equalize recall on the "current" validation set. Additionally, for every date used as a "previous" validation set, we include a pair with this set as both the "previous" and "current" date (to allow for selecting a model based on post-adjustment performance on the previous set)
+    pg_role: Allows you to set a different role in postgres if needed, but generally will be the same as your postgres user
+    schema: We'll use `bias_working` for the intermediate results of each iteration, but then will collect all of these into the `bias_results` schema
+    experiment_hashes: Triage tracks runs of a grid of models via an "experiment" object, identified by this hash. The one coded here is for the set of models described in the study
+    list_sizes: The overall "top k" size(s) to consider (can be a list of multiple, but if so, you'll need to be careful to modify the results query above to choose just one at a time)
+    entity_demos: This is a postgres table containing a lookup between entities (here, projects), dates, and demographics of interest for bias analysis. Here, `bias_working.entity_demos` contains the school poverty levels determined from the project data.
+    demo_col: The specific column of interest for the bias analysis. Here, `plevel` is the school poverty level.
+    """
+    if engine_donors is None or config is None:
+        with open('db_profile.yaml') as fd:
+            config = yaml.full_load(fd)
+            dburl = sqlalchemy.engine.url.URL(
+                "postgresql",
+                host=config["host"],
+                username=config["user"],
+                database=config["db"],
+                password=config["pass"],
+                port=config["port"],
+            )
+            engine_donors = sqlalchemy.create_engine(dburl, poolclass=sqlalchemy.pool.QueuePool)
+        
+    engine_donors.execute('TRUNCATE TABLE bias_results.composite_results_plevel;')
+    engine_donors.execute('TRUNCATE TABLE bias_results.model_adjustment_results_plevel;')
+    engine_donors.execute('TRUNCATE TABLE bias_working.model_adjustment_group_k_plevel;')
+    engine_donors.execute('COMMIT;')
+    date_pairs_all = [
+     ('2011-03-01', '2011-03-01'),
+     ('2011-03-01', '2011-07-01'),
+
+     ('2011-05-01', '2011-05-01'),
+     ('2011-05-01', '2011-09-01'),   
+
+     ('2011-07-01', '2011-07-01'),
+     ('2011-07-01', '2011-11-01'),
+
+     ('2011-09-01', '2011-09-01'),
+     ('2011-09-01', '2012-01-01'),
+
+     ('2011-11-01', '2011-11-01'),
+     ('2011-11-01', '2012-03-01'),
+
+     ('2012-01-01', '2012-01-01'),
+     ('2012-01-01', '2012-05-01'),
+
+     ('2012-03-01', '2012-03-01'),
+     ('2012-03-01', '2012-07-01'),
+
+     ('2012-05-01', '2012-05-01'),
+     ('2012-05-01', '2012-09-01'),
+
+     ('2012-07-01', '2012-07-01'),
+     ('2012-07-01', '2012-11-01'),
+
+     ('2012-09-01', '2012-09-01'),
+     ('2012-09-01', '2013-01-01')
+     ]
+
+    date_list = ['2011-03-01', '2011-05-01', '2011-07-01', '2011-09-01', '2011-11-01', '2012-01-01', '2012-03-01', '2012-05-01', '2012-07-01', '2012-09-01', '2012-11-01', '2013-01-01']
+    
+    for dp_idx in range(10):
+        date_pairs = [ date_pairs_all[2*dp_idx], date_pairs_all[2*dp_idx+1] ]
+        print(date_pairs)
+        params = {}
+        params['pg_role'] = config["user"]
+        params['schema'] = 'bias_working'
+        experiment_hashes = ['a33cbdb3208b0df5f4286237a6dbcf8f']
+        params['experiment_hashes'] = experiment_hashes
+        if isinstance(date_pairs[0], str):
+            date_pairs = [date_pairs]
+        params['date_pairs'] = date_pairs
+        params['date_list'] = date_list
+        params['weights'] = weights
+        params['list_sizes'] = [1000]
+        params['demo_col'] = 'plevel'
+        params['subsample'] = False
+        params['bootstrap'] = False
+        params['entity_demos']='bias_working.entity_demos'
+
+
+        engine=engine_donors
+        ra = RecallAdjuster(engine=engine, params=params, pause_phases=False, alternate_save_names=alternate_save_names)
+        
+        engine_donors.execute("""
+            INSERT INTO bias_results.model_adjustment_results_plevel 
+            SELECT * FROM bias_working.model_adjustment_results_plevel;
+        """)
+    
+        engine_donors.execute("""
+            INSERT INTO bias_results.composite_results_plevel 
+            SELECT * FROM bias_working.composite_results_plevel;
+        """)
+
+        engine_donors.execute("""
+            INSERT INTO bias_results.model_adjustment_group_k_plevel 
+            SELECT * FROM bias_working.model_adjustment_group_k_plevel gkp WHERE (gkp.model_group_id, gkp.train_end_time, gkp.demo_value, gkp.group_k) NOT IN (SELECT * FROM bias_results.model_adjustment_group_k_plevel)
+        """)
+
+        engine_donors.execute("""
+            INSERT INTO bias_results.model_multi_adjustment_results_plevel
+            SELECT * FROM bias_working.model_multi_adjustment_results_plevel;
+        """)
+
+        engine_donors.execute("COMMIT;")
+
+if __name__ == "__main__":
+    education_ra_procedure(weights=[0.99, 0.01], alternate_save_names=["save_res_nn_o"])
+    education_ra_procedure(weights=[0.01, 0.99], alternate_save_names=["save_res_o_nn"])
+    education_ra_procedure(weights=[0.5, 0.5], alternate_save_names=["save_res_half"])
+    
