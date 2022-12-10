@@ -191,7 +191,7 @@ for dp_idx in range(10):
     
     engine_donors.execute("""
         INSERT INTO bias_results.model_adjustment_group_k_plevel 
-        SELECT * FROM bias_working.model_adjustment_group_k_plevel gkp WHERE (gkp.model_group_id, gkp.train_end_time, gkp.demo_value) NOT IN (SELECT * FROM bias_results.model_adjustment_group_k_plevel)
+        SELECT * FROM bias_working.model_adjustment_group_k_plevel gkp WHERE (gkp.model_group_id, gkp.train_end_time, gkp.demo_value) NOT IN (SELECT model_group_id, train_end_time, demo_value FROM bias_results.model_adjustment_group_k_plevel)
     """)
 
     engine_donors.execute("""
