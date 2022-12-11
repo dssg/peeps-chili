@@ -428,7 +428,7 @@ class RecallAdjuster(object):
         return {recall_ratio: ax}
 
     
-def education_ra_procedure(weights=[0.99, 0.01], alternate_save_names=[], engine_donors=None, config=None):
+def education_ra_procedure(weights=[0.99, 0.01], alternate_save_names=[], engine_donors=None, config=None, pause_phases=False):
     """
     Because of the size of the data, we're going to do this iteratively over subsets of validation set dates to avoid running into memory issues, but depending on your dataset and database server, you could instead simply run the `RecallAdjuster` once with the full set of date pairs.
     
@@ -512,7 +512,7 @@ def education_ra_procedure(weights=[0.99, 0.01], alternate_save_names=[], engine
 
 
         engine=engine_donors
-        ra = RecallAdjuster(engine=engine, params=params, pause_phases=False, alternate_save_names=alternate_save_names)
+        ra = RecallAdjuster(engine=engine, params=params, pause_phases=pause_phases, alternate_save_names=alternate_save_names)
         
         engine_donors.execute("""
             INSERT INTO bias_results.model_adjustment_results_plevel 
