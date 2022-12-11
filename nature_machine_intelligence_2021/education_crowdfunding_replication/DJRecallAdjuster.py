@@ -538,6 +538,6 @@ def education_ra_procedure(weights=[0.99, 0.01], alternate_save_names=[], engine
 
 if __name__ == "__main__":
     education_ra_procedure(weights=[0.99, 0.01], alternate_save_names=["save_res_nn_o"])
-    education_ra_procedure(weights=[0.01, 0.99], alternate_save_names=["save_res_o_nn"])
-    education_ra_procedure(weights=[0.5, 0.5], alternate_save_names=["save_res_half"])
+    #education_ra_procedure(weights=[0.01, 0.99], alternate_save_names=["save_res_o_nn"])
+    #education_ra_procedure(weights=[0.5, 0.5], alternate_save_names=["save_res_half"])
     
