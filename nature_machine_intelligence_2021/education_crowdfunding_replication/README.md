@@ -20,15 +20,3 @@ pg_restore -h {POSTGRES_HOST} -p {POSTGRES_PORT} -d education_crowdfunding -U {P
 5. Copy the `db_profile_template.txt` to `db_profile.yaml` in this directory and fill in your credentials in the file
 6. Start a jupyter notebook server and open [education_crowdfunding_replication.ipynb](education_crowdfunding_replication.ipynb) in your browser
 7. Follow the instructions in the notebook for reproducing the figures from the study or re-running the bias analysis. The notebook also provides some notes on further exploring the data and results now that you have it loaded as well.
-
-
-# Multi Adjustment
-
-## Procedure Description
-
-Now instead of computing an adjustment using the thresholds from the previous time step alone, the threshold used to adjust time t is the weighted combination of some times (t-k, ... t-1). 
-
-## Results
-
-It seems like when we use 2 time steps in the past as opposed to one, the results are not really any better than simply using the previous time step, the recall parity is further away on average from one (both are less than one), while the precision is virtually the same. 
-
