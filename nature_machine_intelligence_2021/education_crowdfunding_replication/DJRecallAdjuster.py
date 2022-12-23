@@ -537,7 +537,28 @@ def education_ra_procedure(weights=[0.99, 0.01], alternate_save_names=[], engine
         engine_donors.execute("COMMIT;")
 
 if __name__ == "__main__":
-    education_ra_procedure(weights=[0.99, 0.01], alternate_save_names=["save_res_nn_o"])
-    #education_ra_procedure(weights=[0.01, 0.99], alternate_save_names=["save_res_o_nn"])
-    #education_ra_procedure(weights=[0.5, 0.5], alternate_save_names=["save_res_half"])
+    w = 0.99
+    education_ra_procedure(weights=[w, 1-w], alternate_save_names=["save_res_a"])
+    w = 0.9
+    education_ra_procedure(weights=[w, 1-w], alternate_save_names=["save_res_b"])
+    w = 0.8
+    education_ra_procedure(weights=[w, 1-w], alternate_save_names=["save_res_c"])
+    w = 0.7
+    education_ra_procedure(weights=[w, 1-w], alternate_save_names=["save_res_d"])
+    w = 0.6
+    education_ra_procedure(weights=[w, 1-w], alternate_save_names=["save_res_e"])
+    w = 0.5
+    education_ra_procedure(weights=[w, 1-w], alternate_save_names=["save_res_f"])
+    w = 0.4
+    education_ra_procedure(weights=[w, 1-w], alternate_save_names=["save_res_g"])
+    w = 0.3
+    education_ra_procedure(weights=[w, 1-w], alternate_save_names=["save_res_h"])
+    w = 0.2
+    education_ra_procedure(weights=[w, 1-w], alternate_save_names=["save_res_i"])
+    w = 0.1
+    education_ra_procedure(weights=[w, 1-w], alternate_save_names=["save_res_j"])
+    w = 0.01
+    education_ra_procedure(weights=[w, 1-w], alternate_save_names=["save_res_k"])
+
+    
     
