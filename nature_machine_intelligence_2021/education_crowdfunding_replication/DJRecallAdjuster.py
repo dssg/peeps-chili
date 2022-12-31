@@ -4,6 +4,7 @@ import statsmodels.api as sm
 import statsmodels.formula.api as smf
 
 import os
+import warnings
 import yaml
 import sqlalchemy
 
@@ -44,9 +45,7 @@ class RecallAdjuster(object):
         self,
         engine,
         params,
-        pause_phases=False, 
-        alternate_save_names=[]
-        ):
+        pause_phases=False):
         """
         Arguments:
             engine: 
@@ -144,11 +143,6 @@ class RecallAdjuster(object):
 
         sql = 'SELECT * FROM %s.composite_results_%s' % (self.params['schema'], self.params['demo_col'])
         self.composite_results = pd.read_sql(sql, self.engine)
-        
-        for save_name in alternate_save_names:
-            schema = self.params['schema'] 
-            demo_col = self.params["demo_col"]
-            sql = f"DROP TABLE IF EXISTS {schema}.{save_name}; CREATE {schema}.{save_name} AS SELECT * FROM {schema}.model_adjustment_results_{demo_col}"
 
         self.engine.close()
 
@@ -212,9 +206,11 @@ class RecallAdjuster(object):
 
 
     def validate_dates(self):
-        for past, future in self.params['date_pairs']:
-            if dateparser.parse(past) > dateparser.parse(future):
-                raise ValueError('Error! Cannot validate on the past. %s should be no earlier than %s.' % (future, past))
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore")
+            for past, future in self.params['date_pairs']:
+                if dateparser.parse(past) > dateparser.parse(future):
+                    raise ValueError('Error! Cannot validate on the past. %s should be no earlier than %s.' % (future, past))
 
 
     def do_bootstrap(self):
@@ -443,7 +439,7 @@ def education_ra_procedure(weights=[0.99, 0.01], alternate_save_names=[], engine
     if engine_donors is None or config is None:
         with open('db_profile.yaml') as fd:
             config = yaml.full_load(fd)
-            dburl = sqlalchemy.engine.url.URL(
+            dburl = sqlalchemy.engine.url.URL.create(
                 "postgresql",
                 host=config["host"],
                 username=config["user"],
@@ -512,7 +508,7 @@ def education_ra_procedure(weights=[0.99, 0.01], alternate_save_names=[], engine
 
 
         engine=engine_donors
-        ra = RecallAdjuster(engine=engine, params=params, pause_phases=pause_phases, alternate_save_names=alternate_save_names)
+        ra = RecallAdjuster(engine=engine, params=params, pause_phases=pause_phases)
         
         engine_donors.execute("""
             INSERT INTO bias_results.model_adjustment_results_plevel 
@@ -533,32 +529,49 @@ def education_ra_procedure(weights=[0.99, 0.01], alternate_save_names=[], engine
             INSERT INTO bias_results.model_multi_adjustment_results_plevel
             SELECT * FROM bias_working.model_multi_adjustment_results_plevel;
         """)
-
+        
         engine_donors.execute("COMMIT;")
+            
+    for save_name in alternate_save_names:
+        schema = params['schema'] 
+        demo_col = params["demo_col"]
+        sql = f"DROP TABLE IF EXISTS bias_results.{save_name}; CREATE TABLE bias_results.{save_name} AS SELECT * FROM bias_results.model_adjustment_results_{demo_col};"
+        engine_donors.execute(sql)
+        engine_donors.execute("COMMIT;")
+
 
 if __name__ == "__main__":
     w = 0.99
+    print(f"Procedure with weights: {w}")
     education_ra_procedure(weights=[w, 1-w], alternate_save_names=["save_res_a"])
     w = 0.9
+    print(f"Procedure with weights: {w}")
     education_ra_procedure(weights=[w, 1-w], alternate_save_names=["save_res_b"])
     w = 0.8
+    print(f"Procedure with weights: {w}")    
     education_ra_procedure(weights=[w, 1-w], alternate_save_names=["save_res_c"])
     w = 0.7
+    print(f"Procedure with weights: {w}")
     education_ra_procedure(weights=[w, 1-w], alternate_save_names=["save_res_d"])
     w = 0.6
+    print(f"Procedure with weights: {w}")
     education_ra_procedure(weights=[w, 1-w], alternate_save_names=["save_res_e"])
     w = 0.5
+    print(f"Procedure with weights: {w}")
     education_ra_procedure(weights=[w, 1-w], alternate_save_names=["save_res_f"])
     w = 0.4
+    print(f"Procedure with weights: {w}")
     education_ra_procedure(weights=[w, 1-w], alternate_save_names=["save_res_g"])
     w = 0.3
+    print(f"Procedure with weights: {w}")
     education_ra_procedure(weights=[w, 1-w], alternate_save_names=["save_res_h"])
     w = 0.2
+    print(f"Procedure with weights: {w}")
     education_ra_procedure(weights=[w, 1-w], alternate_save_names=["save_res_i"])
     w = 0.1
+    print(f"Procedure with weights: {w}")
     education_ra_procedure(weights=[w, 1-w], alternate_save_names=["save_res_j"])
     w = 0.01
+    print(f"Procedure with weights: {w}")
     education_ra_procedure(weights=[w, 1-w], alternate_save_names=["save_res_k"])
-
-    
     
