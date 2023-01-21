@@ -460,7 +460,7 @@ def education_ra_procedure(weights=[0.99, 0.01], alternate_save_names=[], engine
     engine_donors.execute('TRUNCATE TABLE bias_working.model_adjustment_group_k_plevel;')
     if exhaustive:
         for al in string.ascii_lowercase[:10]:
-            engine_donors.execute('TRUNCATE TABLE bias_results.exhaustive_{al};')
+            engine_donors.execute(f'TRUNCATE TABLE bias_results.exhaustive_{al};')
         
     engine_donors.execute('COMMIT;')
     date_pairs_all = [
