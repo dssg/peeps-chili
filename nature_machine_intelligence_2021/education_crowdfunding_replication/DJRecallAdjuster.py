@@ -12,7 +12,7 @@ import sqlalchemy
 from itertools import permutations
 from jinja2 import Template
 import dateparser
-
+import string
 
 from ohio.ext.numpy import pg_copy_to_table
 
@@ -45,7 +45,8 @@ class RecallAdjuster(object):
         self,
         engine,
         params,
-        pause_phases=False):
+        pause_phases=False, 
+        exhaustive=False):
         """
         Arguments:
             engine: 
@@ -92,6 +93,8 @@ class RecallAdjuster(object):
                     The minimum time we must go back given a future_train_end_time to know we have that data and label set at prediction time of future_train_end_time. If not stated we assume 2
             pause_phases:
                 True if you want a break after each phase requiring user input to continue
+            exhaustive:
+                Runs bias adjustment with group_k +- 50 on both sides to measure stability of results to adjustment thresholds
         """
 
         # store parameters
@@ -130,7 +133,10 @@ class RecallAdjuster(object):
         
 
         # pre-calculate the results for all models, date pairs
-        sql = Template(open('recall_adjustment_verbose.sql.tmpl', 'r').read()).render(**self.params)
+        if not exhaustive:
+            sql = Template(open('recall_adjustment_verbose.sql.tmpl', 'r').read()).render(**self.params)
+        else:
+            sql = Template(open('recall_adjustment_exhaustive.sql.tmpl', 'r').read()).render(**self.params)
         self.engine.execute(sql)
         self.engine.execute("COMMIT")
         
@@ -424,7 +430,7 @@ class RecallAdjuster(object):
         return {recall_ratio: ax}
 
     
-def education_ra_procedure(weights=[0.99, 0.01], alternate_save_names=[], engine_donors=None, config=None, pause_phases=False):
+def education_ra_procedure(weights=[0.99, 0.01], alternate_save_names=[], engine_donors=None, config=None, pause_phases=False, exhaustive=False):
     """
     Because of the size of the data, we're going to do this iteratively over subsets of validation set dates to avoid running into memory issues, but depending on your dataset and database server, you could instead simply run the `RecallAdjuster` once with the full set of date pairs.
     
@@ -452,6 +458,10 @@ def education_ra_procedure(weights=[0.99, 0.01], alternate_save_names=[], engine
     engine_donors.execute('TRUNCATE TABLE bias_results.composite_results_plevel;')
     engine_donors.execute('TRUNCATE TABLE bias_results.model_adjustment_results_plevel;')
     engine_donors.execute('TRUNCATE TABLE bias_working.model_adjustment_group_k_plevel;')
+    if exhaustive:
+        for al in string.ascii_lowercase[:10]:
+            engine_donors.execute('TRUNCATE TABLE bias_results.exhaustive_{al};')
+        
     engine_donors.execute('COMMIT;')
     date_pairs_all = [
      ('2011-03-01', '2011-03-01'),
@@ -510,26 +520,33 @@ def education_ra_procedure(weights=[0.99, 0.01], alternate_save_names=[], engine
         engine=engine_donors
         ra = RecallAdjuster(engine=engine, params=params, pause_phases=pause_phases)
         
-        engine_donors.execute("""
-            INSERT INTO bias_results.model_adjustment_results_plevel 
-            SELECT * FROM bias_working.model_adjustment_results_plevel;
-        """)
-    
-        engine_donors.execute("""
-            INSERT INTO bias_results.composite_results_plevel 
-            SELECT * FROM bias_working.composite_results_plevel;
-        """)
+        if not exhaustive:
+            engine_donors.execute("""
+                INSERT INTO bias_results.model_adjustment_results_plevel 
+                SELECT * FROM bias_working.model_adjustment_results_plevel;
+            """)
 
-        engine_donors.execute("""
-            INSERT INTO bias_results.model_adjustment_group_k_plevel 
-            SELECT * FROM bias_working.model_adjustment_group_k_plevel gkp WHERE (gkp.model_group_id, gkp.train_end_time, gkp.demo_value, gkp.group_k) NOT IN (SELECT * FROM bias_results.model_adjustment_group_k_plevel)
-        """)
+            engine_donors.execute("""
+                INSERT INTO bias_results.composite_results_plevel 
+                SELECT * FROM bias_working.composite_results_plevel;
+            """)
 
-        engine_donors.execute("""
-            INSERT INTO bias_results.model_multi_adjustment_results_plevel
-            SELECT * FROM bias_working.model_multi_adjustment_results_plevel;
-        """)
-        
+            engine_donors.execute("""
+                INSERT INTO bias_results.model_adjustment_group_k_plevel 
+                SELECT * FROM bias_working.model_adjustment_group_k_plevel gkp WHERE (gkp.model_group_id, gkp.train_end_time, gkp.demo_value, gkp.group_k) NOT IN (SELECT * FROM bias_results.model_adjustment_group_k_plevel)
+            """)
+
+            engine_donors.execute("""
+                INSERT INTO bias_results.model_multi_adjustment_results_plevel
+                SELECT * FROM bias_working.model_multi_adjustment_results_plevel;
+            """)
+        else:
+            for al in string.ascii_lowercase[:10]:
+                engine_donors.execute(f"""
+                    INSERT INTO bias_results.exhaustive_{al} 
+                    SELECT * FROM bias_working.exhaustive_{al};
+                """)
+
         engine_donors.execute("COMMIT;")
             
     for save_name in alternate_save_names:
@@ -539,8 +556,8 @@ def education_ra_procedure(weights=[0.99, 0.01], alternate_save_names=[], engine
         engine_donors.execute(sql)
         engine_donors.execute("COMMIT;")
 
-
-if __name__ == "__main__":
+        
+def multi_weight_education_ra_procedure():
     w = 0.99
     print(f"Procedure with weights: {w}")
     education_ra_procedure(weights=[w, 1-w], alternate_save_names=["save_res_a"])
@@ -574,4 +591,9 @@ if __name__ == "__main__":
     w = 0.01
     print(f"Procedure with weights: {w}")
     education_ra_procedure(weights=[w, 1-w], alternate_save_names=["save_res_k"])
+    
+        
+
+if __name__ == "__main__":
+    education_ra_procedure(weights=[1], exhaustive=True)
     
