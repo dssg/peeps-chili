@@ -518,7 +518,7 @@ def education_ra_procedure(weights=[0.99, 0.01], alternate_save_names=[], engine
 
 
         engine=engine_donors
-        ra = RecallAdjuster(engine=engine, params=params, pause_phases=pause_phases)
+        ra = RecallAdjuster(engine=engine, params=params, pause_phases=pause_phases, exhaustive=exhaustive)
         
         if not exhaustive:
             engine_donors.execute("""
@@ -595,5 +595,5 @@ def multi_weight_education_ra_procedure():
         
 
 if __name__ == "__main__":
-    education_ra_procedure(weights=[1], exhaustive=True)
+    education_ra_procedure(weights=[1, 0], exhaustive=False)
     

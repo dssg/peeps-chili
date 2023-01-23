@@ -297,109 +297,109 @@ CREATE INDEX ON {{schema}}.tmp_bias_mod_adjusted(model_id, list_size, metric, pa
 -- XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX
 -- Looping over different +- on the adjusted thresholds
 -- |||||||||||||||||||||||||||||||||||||||||||
-DROP TABLE IF EXISTS {{ schema }}.pre_pre_exhaustive_a;
-CREATE TABLE {{ schema }}.pre_pre_exhaustive_a_group_nums AS 
-(select method, model_group_id , past_train_end_time , future_train_end_time , list_size , demo_value , case when demo_value = 'highest' then group_k -50 else group_k +50 end as group_k
-from {{ schema }}.tmp_bias_mod_adjusted_group_nums;) 
-
-{{ create_tables('pre_pre_exhaustive_a') }}
-
-DROP TABLE IF EXISTS {{schema}}.pre_pre_exhaustive_a;
-CREATE TABLE {{schema}}.pre_pre_exhaustive_a
-AS
-( {{ results_sql('pre_pre_exhaustive_a') }} ); 
-
-CREATE INDEX ON {{schema}}.pre_pre_exhaustive_a(model_id, list_size, metric, parameter);
--- |||||||||||||||||||||||||||||||||||||||||||
-DROP TABLE IF EXISTS {{ schema }}.pre_pre_exhaustive_b;
-CREATE TABLE {{ schema }}.pre_pre_exhaustive_b_group_nums AS 
-(select method, model_group_id , past_train_end_time , future_train_end_time , list_size , demo_value , case when demo_value = 'highest' then group_k -40 else group_k +40 end as group_k
-from {{ schema }}.tmp_bias_mod_adjusted_group_nums;) 
-
-{{ create_tables('pre_pre_exhaustive_b') }}
-
-DROP TABLE IF EXISTS {{schema}}.pre_pre_exhaustive_b;
-CREATE TABLE {{schema}}.pre_pre_exhaustive_b
-AS
-( {{ results_sql('pre_pre_exhaustive_b') }} ); 
-
-CREATE INDEX ON {{schema}}.pre_pre_exhaustive_b(model_id, list_size, metric, parameter);
--- |||||||||||||||||||||||||||||||||||||||||||
-DROP TABLE IF EXISTS {{ schema }}.pre_pre_exhaustive_c;
-CREATE TABLE {{ schema }}.pre_pre_exhaustive_c_group_nums AS 
-(select method, model_group_id , past_train_end_time , future_train_end_time , list_size , demo_value , case when demo_value = 'highest' then group_k -30 else group_k +30 end as group_k
-from {{ schema }}.tmp_bias_mod_adjusted_group_nums;) 
-
-{{ create_tables('pre_pre_exhaustive_c') }}
-
-DROP TABLE IF EXISTS {{schema}}.pre_pre_exhaustive_c;
-CREATE TABLE {{schema}}.pre_pre_exhaustive_c
-AS
-( {{ results_sql('pre_pre_exhaustive_c') }} ); 
-
-CREATE INDEX ON {{schema}}.pre_pre_exhaustive_c(model_id, list_size, metric, parameter);
--- |||||||||||||||||||||||||||||||||||||||||||
-DROP TABLE IF EXISTS {{ schema }}.pre_pre_exhaustive_d;
-CREATE TABLE {{ schema }}.pre_pre_exhaustive_d_group_nums AS 
-(select method, model_group_id , past_train_end_time , future_train_end_time , list_size , demo_value , case when demo_value = 'highest' then group_k -20 else group_k +20 end as group_k
-from {{ schema }}.tmp_bias_mod_adjusted_group_nums;) 
-
-{{ create_tables('pre_pre_exhaustive_d') }}
-
-DROP TABLE IF EXISTS {{schema}}.pre_pre_exhaustive_d;
-CREATE TABLE {{schema}}.pre_pre_exhaustive_d
-AS
-( {{ results_sql('pre_pre_exhaustive_d') }} ); 
-
-CREATE INDEX ON {{schema}}.pre_pre_exhaustive_d(model_id, list_size, metric, parameter);
-
--- |||||||||||||||||||||||||||||||||||||||||||
-DROP TABLE IF EXISTS {{ schema }}.pre_pre_exhaustive_e;
-CREATE TABLE {{ schema }}.pre_pre_exhaustive_e_group_nums AS 
-(select method, model_group_id , past_train_end_time , future_train_end_time , list_size , demo_value , case when demo_value = 'highest' then group_k -10 else group_k +10 end as group_k
-from {{ schema }}.tmp_bias_mod_adjusted_group_nums;) 
-
-{{ create_tables('pre_pre_exhaustive_e') }}
-
-DROP TABLE IF EXISTS {{schema}}.pre_pre_exhaustive_e;
-CREATE TABLE {{schema}}.pre_pre_exhaustive_e
-AS
-( {{ results_sql('pre_pre_exhaustive_e') }} ); 
-
-CREATE INDEX ON {{schema}}.pre_pre_exhaustive_e(model_id, list_size, metric, parameter);
--- |||||||||||||||||||||||||||||||||||||||||||
-DROP TABLE IF EXISTS {{ schema }}.pre_pre_exhaustive_af;
-CREATE TABLE {{ schema }}.pre_pre_exhaustive_a_group_nums AS 
-(select method, model_group_id , past_train_end_time , future_train_end_time , list_size , demo_value , case when demo_value = 'highest' then group_k +10 else group_k -10 end as group_k
-from {{ schema }}.tmp_bias_mod_adjusted_group_nums;) 
-
-{{ create_tables('pre_pre_exhaustive_f') }}
-
-DROP TABLE IF EXISTS {{schema}}.pre_pre_exhaustive_f;
-CREATE TABLE {{schema}}.pre_pre_exhaustive_f
-AS
-( {{ results_sql('pre_pre_exhaustive_f') }} ); 
-
-CREATE INDEX ON {{schema}}.pre_pre_exhaustive_f(model_id, list_size, metric, parameter);
--- |||||||||||||||||||||||||||||||||||||||||||
-DROP TABLE IF EXISTS {{ schema }}.pre_pre_exhaustive_g;
-CREATE TABLE {{ schema }}.pre_pre_exhaustive_a_group_nums AS 
-(select method, model_group_id , past_train_end_time , future_train_end_time , list_size , demo_value , case when demo_value = 'highest' then group_k +20 else group_k -20 end as group_k
-from {{ schema }}.tmp_bias_mod_adjusted_group_nums;) 
-
-{{ create_tables('pre_pre_exhaustive_g') }}
-
-DROP TABLE IF EXISTS {{schema}}.pre_pre_exhaustive_g;
-CREATE TABLE {{schema}}.pre_pre_exhaustive_g
-AS
-( {{ results_sql('pre_pre_exhaustive_g') }} ); 
-
-CREATE INDEX ON {{schema}}.pre_pre_exhaustive_g(model_id, list_size, metric, parameter);
--- |||||||||||||||||||||||||||||||||||||||||||
-DROP TABLE IF EXISTS {{ schema }}.pre_exhaustive_h;
+DROP TABLE IF EXISTS {{ schema }}.pre_exhaustive_a_group_nums;
 CREATE TABLE {{ schema }}.pre_exhaustive_a_group_nums AS 
+(select method, model_group_id , past_train_end_time , future_train_end_time , list_size , demo_value , case when demo_value = 'highest' then group_k -50 else group_k +50 end as group_k
+from {{ schema }}.tmp_bias_mod_adjusted_group_nums); 
+
+{{ create_tables('pre_exhaustive_a') }}
+
+DROP TABLE IF EXISTS {{schema}}.pre_exhaustive_a;
+CREATE TABLE {{schema}}.pre_exhaustive_a
+AS
+( {{ results_sql('pre_exhaustive_a') }} ); 
+
+CREATE INDEX ON {{schema}}.pre_exhaustive_a(model_id, list_size, metric, parameter);
+-- |||||||||||||||||||||||||||||||||||||||||||
+DROP TABLE IF EXISTS {{ schema }}.pre_exhaustive_b_group_nums;
+CREATE TABLE {{ schema }}.pre_exhaustive_b_group_nums AS 
+(select method, model_group_id , past_train_end_time , future_train_end_time , list_size , demo_value , case when demo_value = 'highest' then group_k -40 else group_k +40 end as group_k
+from {{ schema }}.tmp_bias_mod_adjusted_group_nums); 
+
+{{ create_tables('pre_exhaustive_b') }}
+
+DROP TABLE IF EXISTS {{schema}}.pre_exhaustive_b;
+CREATE TABLE {{schema}}.pre_exhaustive_b
+AS
+( {{ results_sql('pre_exhaustive_b') }} ); 
+
+CREATE INDEX ON {{schema}}.pre_exhaustive_b(model_id, list_size, metric, parameter);
+-- |||||||||||||||||||||||||||||||||||||||||||
+DROP TABLE IF EXISTS {{ schema }}.pre_exhaustive_c_group_nums;
+CREATE TABLE {{ schema }}.pre_exhaustive_c_group_nums AS 
+(select method, model_group_id , past_train_end_time , future_train_end_time , list_size , demo_value , case when demo_value = 'highest' then group_k -30 else group_k +30 end as group_k
+from {{ schema }}.tmp_bias_mod_adjusted_group_nums); 
+
+{{ create_tables('pre_exhaustive_c') }}
+
+DROP TABLE IF EXISTS {{schema}}.pre_exhaustive_c;
+CREATE TABLE {{schema}}.pre_exhaustive_c
+AS
+( {{ results_sql('pre_exhaustive_c') }} ); 
+
+CREATE INDEX ON {{schema}}.pre_exhaustive_c(model_id, list_size, metric, parameter);
+-- |||||||||||||||||||||||||||||||||||||||||||
+DROP TABLE IF EXISTS {{ schema }}.pre_exhaustive_d_group_nums;
+CREATE TABLE {{ schema }}.pre_exhaustive_d_group_nums AS 
+(select method, model_group_id , past_train_end_time , future_train_end_time , list_size , demo_value , case when demo_value = 'highest' then group_k -20 else group_k +20 end as group_k
+from {{ schema }}.tmp_bias_mod_adjusted_group_nums); 
+
+{{ create_tables('pre_exhaustive_d') }}
+
+DROP TABLE IF EXISTS {{schema}}.pre_exhaustive_d;
+CREATE TABLE {{schema}}.pre_exhaustive_d
+AS
+( {{ results_sql('pre_exhaustive_d') }} ); 
+
+CREATE INDEX ON {{schema}}.pre_exhaustive_d(model_id, list_size, metric, parameter);
+
+-- |||||||||||||||||||||||||||||||||||||||||||
+DROP TABLE IF EXISTS {{ schema }}.pre_exhaustive_e_group_nums;
+CREATE TABLE {{ schema }}.pre_exhaustive_e_group_nums AS 
+(select method, model_group_id , past_train_end_time , future_train_end_time , list_size , demo_value , case when demo_value = 'highest' then group_k -10 else group_k +10 end as group_k
+from {{ schema }}.tmp_bias_mod_adjusted_group_nums); 
+
+{{ create_tables('pre_exhaustive_e') }}
+
+DROP TABLE IF EXISTS {{schema}}.pre_exhaustive_e;
+CREATE TABLE {{schema}}.pre_exhaustive_e
+AS
+( {{ results_sql('pre_exhaustive_e') }} ); 
+
+CREATE INDEX ON {{schema}}.pre_exhaustive_e(model_id, list_size, metric, parameter);
+-- |||||||||||||||||||||||||||||||||||||||||||
+DROP TABLE IF EXISTS {{ schema }}.pre_exhaustive_f_group_nums;
+CREATE TABLE {{ schema }}.pre_exhaustive_f_group_nums AS 
+(select method, model_group_id , past_train_end_time , future_train_end_time , list_size , demo_value , case when demo_value = 'highest' then group_k +10 else group_k -10 end as group_k
+from {{ schema }}.tmp_bias_mod_adjusted_group_nums); 
+
+{{ create_tables('pre_exhaustive_f') }}
+
+DROP TABLE IF EXISTS {{schema}}.pre_exhaustive_f;
+CREATE TABLE {{schema}}.pre_exhaustive_f
+AS
+( {{ results_sql('pre_exhaustive_f') }} ); 
+
+CREATE INDEX ON {{schema}}.pre_exhaustive_f(model_id, list_size, metric, parameter);
+-- |||||||||||||||||||||||||||||||||||||||||||
+DROP TABLE IF EXISTS {{ schema }}.pre_exhaustive_g_group_nums;
+CREATE TABLE {{ schema }}.pre_exhaustive_g_group_nums AS 
+(select method, model_group_id , past_train_end_time , future_train_end_time , list_size , demo_value , case when demo_value = 'highest' then group_k +20 else group_k -20 end as group_k
+from {{ schema }}.tmp_bias_mod_adjusted_group_nums); 
+
+{{ create_tables('pre_exhaustive_g') }}
+
+DROP TABLE IF EXISTS {{schema}}.pre_exhaustive_g;
+CREATE TABLE {{schema}}.pre_exhaustive_g
+AS
+( {{ results_sql('pre_exhaustive_g') }} ); 
+
+CREATE INDEX ON {{schema}}.pre_exhaustive_g(model_id, list_size, metric, parameter);
+-- |||||||||||||||||||||||||||||||||||||||||||
+DROP TABLE IF EXISTS {{ schema }}.pre_exhaustive_h_group_nums;
+CREATE TABLE {{ schema }}.pre_exhaustive_h_group_nums AS 
 (select method, model_group_id , past_train_end_time , future_train_end_time , list_size , demo_value , case when demo_value = 'highest' then group_k +30 else group_k -30 end as group_k
-from {{ schema }}.tmp_bias_mod_adjusted_group_nums;) 
+from {{ schema }}.tmp_bias_mod_adjusted_group_nums); 
 
 {{ create_tables('pre_exhaustive_h') }}
 
@@ -410,10 +410,10 @@ AS
 
 CREATE INDEX ON {{schema}}.pre_exhaustive_h(model_id, list_size, metric, parameter);
 -- |||||||||||||||||||||||||||||||||||||||||||
-DROP TABLE IF EXISTS {{ schema }}.pre_exhaustive_i;
-CREATE TABLE {{ schema }}.pre_exhaustive_a_group_nums AS 
+DROP TABLE IF EXISTS {{ schema }}.pre_exhaustive_i_group_nums;
+CREATE TABLE {{ schema }}.pre_exhaustive_i_group_nums AS 
 (select method, model_group_id , past_train_end_time , future_train_end_time , list_size , demo_value , case when demo_value = 'highest' then group_k +40 else group_k -40 end as group_k
-from {{ schema }}.tmp_bias_mod_adjusted_group_nums;) 
+from {{ schema }}.tmp_bias_mod_adjusted_group_nums); 
 
 {{ create_tables('pre_exhaustive_i') }}
 
@@ -424,10 +424,10 @@ AS
 
 CREATE INDEX ON {{schema}}.pre_exhaustive_i(model_id, list_size, metric, parameter);
 -- |||||||||||||||||||||||||||||||||||||||||||
-DROP TABLE IF EXISTS {{ schema }}.pre_exhaustive_j;
-CREATE TABLE {{ schema }}.pre_exhaustive_a_group_nums AS 
+DROP TABLE IF EXISTS {{ schema }}.pre_exhaustive_j_group_nums;
+CREATE TABLE {{ schema }}.pre_exhaustive_j_group_nums AS 
 (select method, model_group_id , past_train_end_time , future_train_end_time , list_size , demo_value , case when demo_value = 'highest' then group_k +50 else group_k -50 end as group_k
-from {{ schema }}.tmp_bias_mod_adjusted_group_nums;) 
+from {{ schema }}.tmp_bias_mod_adjusted_group_nums); 
 
 {{ create_tables('pre_exhaustive_j') }}
 
