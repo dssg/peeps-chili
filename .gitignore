@@ -37,4 +37,5 @@ desktop.ini
 # VS Code
 .vscode/
 nature_machine_intelligence_2021/education_crowdfunding_replication/db_profile.yaml
-
+nature_machine_intelligence_2021/housing_safety/config/db_profile.yaml
+*.log.txt

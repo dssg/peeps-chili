@@ -1,142 +1,0 @@
-xt
-[01;32mdhananja@ip-10-0-1-114[00m:[01;34m~/peeps-chili/nature_machine_intelligence_2021/education_ccrowdfunding_replication[00m$ git staut[K[Ktus
-On branch dj_time_robustness
-Your branch is ahead of 'origin/dj_time_robustness' by 1 commit.
-  (use "git push" to publish your local commits)
-
-Changes to be committed:
-  (use "git restore --staged <file>..." to unstage)
-	[32mmodified:   DJRecallAdjuster.py[m
-	[32mdeleted:    RecallAdjuster.py[m
-	[32mmodified:   education_crowdfunding_replication.ipynb[m
-	[32mmodified:   log.txt[m
-	[32mrenamed:    recall_adjustment-verbose.sql.tmpl -> recall_adjustment_verbose.sql.tmpl[m
-	[32mdeleted:    screen_script.py[m
-
-Changes not staged for commit:
-  (use "git add <file>..." to update what will be committed)
-  (use "git restore <file>..." to discard changes in working directory)
-	[31mmodified:   log.txt[m
-
-[01;32mdhananja@ip-10-0-1-114[00m:[01;34m~/peeps-chili/nature_machine_intelligence_2021/education_ccrowdfunding_replication[00m$ git add log.txt
-[01;32mdhananja@ip-10-0-1-114[00m:[01;34m~/peeps-chili/nature_machine_intelligence_2021/education_ccrowdfunding_replication[00m$ git commit -m ""C"o"m"p"l"e"t"e"d" "D"J"R"e"c"a"l"l" "A"d"j"u"s"t"e"r"," "m"u"s"t" "t"e"s"t" [A[C[C[C[C[C[C[C[C[C[C[C[C[C[C[C[C[C[C[C[C[C[C[C[C[C[C[C[C[C[C[C[C[C[C[C[C[C[C[C[C[C[C[C[C[C[C[C[C[C[C[C[C[C[C[C[C[C[C[C[C[C[C[C[C[C[C[C[C[C[C[C[C[C[C[C[C[C[C ""n"o"w"
-[dj_time_robustness 75ab5a7] Completed DJRecall Adjuster, must test now
- 5 files changed, 1022 insertions(+), 2816 deletions(-)
- rename nature_machine_intelligence_2021/education_crowdfunding_replication/{RecallAdjuster.py => DJRecallAdjuster.py} (51%)
- rewrite nature_machine_intelligence_2021/education_crowdfunding_replication/education_crowdfunding_replication.ipynb (96%)
- rewrite nature_machine_intelligence_2021/education_crowdfunding_replication/log.txt (100%)
- rename nature_machine_intelligence_2021/education_crowdfunding_replication/{recall_adjustment-verbose.sql.tmpl => recall_adjustment_verbose.sql.tmpl} (100%)
- delete mode 100644 nature_machine_intelligence_2021/education_crowdfunding_replication/screen_script.py
-[01;32mdhananja@ip-10-0-1-114[00m:[01;34m~/peeps-chili/nature_machine_intelligence_2021/education_ccrowdfunding_replication[00m$ git push
-Enumerating objects: 22, done.
-Counting objects:   4% (1/22)Counting objects:   9% (2/22)Counting objects:  13% (3/22)Counting objects:  18% (4/22)Counting objects:  22% (5/22)Counting objects:  27% (6/22)Counting objects:  31% (7/22)Counting objects:  36% (8/22)Counting objects:  40% (9/22)Counting objects:  45% (10/22)Counting objects:  50% (11/22)Counting objects:  54% (12/22)Counting objects:  59% (13/22)Counting objects:  63% (14/22)Counting objects:  68% (15/22)Counting objects:  72% (16/22)Counting objects:  77% (17/22)Counting objects:  81% (18/22)Counting objects:  86% (19/22)Counting objects:  90% (20/22)Counting objects:  95% (21/22)Counting objects: 100% (22/22)Counting objects: 100% (22/22), done.
-Delta compression using up to 2 threads
-Compressing objects:   6% (1/15)Compressing objects:  13% (2/15)Compressing objects:  20% (3/15)Compressing objects:  26% (4/15)Compressing objects:  33% (5/15)Compressing objects:  40% (6/15)Compressing objects:  46% (7/15)Compressing objects:  53% (8/15)Compressing objects:  60% (9/15)Compressing objects:  66% (10/15)Compressing objects:  73% (11/15)Compressing objects:  80% (12/15)Compressing objects:  86% (13/15)Compressing objects:  93% (14/15)Compressing objects: 100% (15/15)Compressing objects: 100% (15/15), done.
-Writing objects:   6% (1/15)Writing objects:  13% (2/15)Writing objects:  20% (3/15)Writing objects:  26% (4/15)Writing objects:  40% (6/15)Writing objects:  46% (7/15)Writing objects:  60% (9/15)Writing objects:  66% (10/15)Writing objects:  73% (11/15)Writing objects:  80% (12/15)Writing objects:  86% (13/15)Writing objects:  93% (14/15)Writing objects: 100% (15/15)Writing objects: 100% (15/15), 668.61 KiB | 8.80 MiB/s, done.
-Total 15 (delta 9), reused 0 (delta 0), pack-reused 0
-remote: Resolving deltas:   0% (0/9)[Kremote: Resolving deltas:  11% (1/9)[Kremote: Resolving deltas:  22% (2/9)[Kremote: Resolving deltas:  33% (3/9)[Kremote: Resolving deltas:  44% (4/9)[Kremote: Resolving deltas:  55% (5/9)[Kremote: Resolving deltas:  66% (6/9)[Kremote: Resolving deltas:  77% (7/9)[Kremote: Resolving deltas:  88% (8/9)[Kremote: Resolving deltas: 100% (9/9)[Kremote: Resolving deltas: 100% (9/9), completed with 4 local objects.[K
-To https://github.com/dssg/peeps-chili
-   674556f..75ab5a7  dj_time_robustness -> dj_time_robustness
-[01;32mdhananja@ip-10-0-1-114[00m:[01;34m~/peeps-chili/nature_machine_intelligence_2021/education_ccrowdfunding_replication[00m$ screen -r
-There is a screen on:
-	2925.pts-0.ip-10-0-1-114	(12/10/22 15:46:04)	(Attached)
-There is no screen to be resumed.
-[01;32mdhananja@ip-10-0-1-114[00m:[01;34m~/peeps-chili/nature_machine_intelligence_2021/education_ccrowdfunding_replication[00m$ [01;32mdhananja@ip-10-0-1-114[00m:[01;34m~/peeps-chili/nature_machine_intelligence_2021/education_ccrowdfunding_replication[00m$ python DJRecallAdjuster.py
-DJRecallAdjuster.py:446: SADeprecationWarning: Calling URL() directly is deprecated and will be disabled in a future release.  The public constructor for URL is now the URL.create() method.
-  dburl = sqlalchemy.engine.url.URL(
-[('2011-03-01', '2011-03-01'), ('2011-03-01', '2011-07-01')]
-/home/dhananja/.pyenv/versions/3.8.1/lib/python3.8/site-packages/dateparser/date_parser.py:35: PytzUsageWarning: The localize method is no longer necessary, as this time zone supports the fold attribute (PEP 495). For more details on migrating to a PEP 495-compliant implementation, see https://pytz-deprecation-shim.readthedocs.io/en/latest/migration.html
-  date_obj = stz.localize(date_obj)
-[('2011-05-01', '2011-05-01'), ('2011-05-01', '2011-09-01')]
-/home/dhananja/.pyenv/versions/3.8.1/lib/python3.8/site-packages/dateparser/date_parser.py:35: PytzUsageWarning: The localize method is no longer necessary, as this time zone supports the fold attribute (PEP 495). For more details on migrating to a PEP 495-compliant implementation, see https://pytz-deprecation-shim.readthedocs.io/en/latest/migration.html
-  date_obj = stz.localize(date_obj)
-[('2011-07-01', '2011-07-01'), ('2011-07-01', '2011-11-01')]
-/home/dhananja/.pyenv/versions/3.8.1/lib/python3.8/site-packages/dateparser/date_parser.py:35: PytzUsageWarning: The localize method is no longer necessary, as this time zone supports the fold attribute (PEP 495). For more details on migrating to a PEP 495-compliant implementation, see https://pytz-deprecation-shim.readthedocs.io/en/latest/migration.html
-  date_obj = stz.localize(date_obj)
-[('2011-09-01', '2011-09-01'), ('2011-09-01', '2012-01-01')]
-/home/dhananja/.pyenv/versions/3.8.1/lib/python3.8/site-packages/dateparser/date_parser.py:35: PytzUsageWarning: The localize method is no longer necessary, as this time zone supports the fold attribute (PEP 495). For more details on migrating to a PEP 495-compliant implementation, see https://pytz-deprecation-shim.readthedocs.io/en/latest/migration.html
-  date_obj = stz.localize(date_obj)
-[('2011-11-01', '2011-11-01'), ('2011-11-01', '2012-03-01')]
-/home/dhananja/.pyenv/versions/3.8.1/lib/python3.8/site-packages/dateparser/date_parser.py:35: PytzUsageWarning: The localize method is no longer necessary, as this time zone supports the fold attribute (PEP 495). For more details on migrating to a PEP 495-compliant implementation, see https://pytz-deprecation-shim.readthedocs.io/en/latest/migration.html
-  date_obj = stz.localize(date_obj)
-[('2012-01-01', '2012-01-01'), ('2012-01-01', '2012-05-01')]
-/home/dhananja/.pyenv/versions/3.8.1/lib/python3.8/site-packages/dateparser/date_parser.py:35: PytzUsageWarning: The localize method is no longer necessary, as this time zone supports the fold attribute (PEP 495). For more details on migrating to a PEP 495-compliant implementation, see https://pytz-deprecation-shim.readthedocs.io/en/latest/migration.html
-  date_obj = stz.localize(date_obj)
-[('2012-03-01', '2012-03-01'), ('2012-03-01', '2012-07-01')]
-/home/dhananja/.pyenv/versions/3.8.1/lib/python3.8/site-packages/dateparser/date_parser.py:35: PytzUsageWarning: The localize method is no longer necessary, as this time zone supports the fold attribute (PEP 495). For more details on migrating to a PEP 495-compliant implementation, see https://pytz-deprecation-shim.readthedocs.io/en/latest/migration.html
-  date_obj = stz.localize(date_obj)
-[('2012-05-01', '2012-05-01'), ('2012-05-01', '2012-09-01')]
-/home/dhananja/.pyenv/versions/3.8.1/lib/python3.8/site-packages/dateparser/date_parser.py:35: PytzUsageWarning: The localize method is no longer necessary, as this time zone supports the fold attribute (PEP 495). For more details on migrating to a PEP 495-compliant implementation, see https://pytz-deprecation-shim.readthedocs.io/en/latest/migration.html
-  date_obj = stz.localize(date_obj)
-[('2012-07-01', '2012-07-01'), ('2012-07-01', '2012-11-01')]
-/home/dhananja/.pyenv/versions/3.8.1/lib/python3.8/site-packages/dateparser/date_parser.py:35: PytzUsageWarning: The localize method is no longer necessary, as this time zone supports the fold attribute (PEP 495). For more details on migrating to a PEP 495-compliant implementation, see https://pytz-deprecation-shim.readthedocs.io/en/latest/migration.html
-  date_obj = stz.localize(date_obj)
-[('2012-09-01', '2012-09-01'), ('2012-09-01', '2013-01-01')]
-/home/dhananja/.pyenv/versions/3.8.1/lib/python3.8/site-packages/dateparser/date_parser.py:35: PytzUsageWarning: The localize method is no longer necessary, as this time zone supports the fold attribute (PEP 495). For more details on migrating to a PEP 495-compliant implementation, see https://pytz-deprecation-shim.readthedocs.io/en/latest/migration.html
-  date_obj = stz.localize(date_obj)
-DJRecallAdjuster.py:446: SADeprecationWarning: Calling URL() directly is deprecated and will be disabled in a future release.  The public constructor for URL is now the URL.create() method.
-  dburl = sqlalchemy.engine.url.URL(
-[('2011-03-01', '2011-03-01'), ('2011-03-01', '2011-07-01')]
-/home/dhananja/.pyenv/versions/3.8.1/lib/python3.8/site-packages/dateparser/date_parser.py:35: PytzUsageWarning: The localize method is no longer necessary, as this time zone supports the fold attribute (PEP 495). For more details on migrating to a PEP 495-compliant implementation, see https://pytz-deprecation-shim.readthedocs.io/en/latest/migration.html
-  date_obj = stz.localize(date_obj)
-[('2011-05-01', '2011-05-01'), ('2011-05-01', '2011-09-01')]
-/home/dhananja/.pyenv/versions/3.8.1/lib/python3.8/site-packages/dateparser/date_parser.py:35: PytzUsageWarning: The localize method is no longer necessary, as this time zone supports the fold attribute (PEP 495). For more details on migrating to a PEP 495-compliant implementation, see https://pytz-deprecation-shim.readthedocs.io/en/latest/migration.html
-  date_obj = stz.localize(date_obj)
-[('2011-07-01', '2011-07-01'), ('2011-07-01', '2011-11-01')]
-/home/dhananja/.pyenv/versions/3.8.1/lib/python3.8/site-packages/dateparser/date_parser.py:35: PytzUsageWarning: The localize method is no longer necessary, as this time zone supports the fold attribute (PEP 495). For more details on migrating to a PEP 495-compliant implementation, see https://pytz-deprecation-shim.readthedocs.io/en/latest/migration.html
-  date_obj = stz.localize(date_obj)
-[('2011-09-01', '2011-09-01'), ('2011-09-01', '2012-01-01')]
-/home/dhananja/.pyenv/versions/3.8.1/lib/python3.8/site-packages/dateparser/date_parser.py:35: PytzUsageWarning: The localize method is no longer necessary, as this time zone supports the fold attribute (PEP 495). For more details on migrating to a PEP 495-compliant implementation, see https://pytz-deprecation-shim.readthedocs.io/en/latest/migration.html
-  date_obj = stz.localize(date_obj)
-[('2011-11-01', '2011-11-01'), ('2011-11-01', '2012-03-01')]
-/home/dhananja/.pyenv/versions/3.8.1/lib/python3.8/site-packages/dateparser/date_parser.py:35: PytzUsageWarning: The localize method is no longer necessary, as this time zone supports the fold attribute (PEP 495). For more details on migrating to a PEP 495-compliant implementation, see https://pytz-deprecation-shim.readthedocs.io/en/latest/migration.html
-  date_obj = stz.localize(date_obj)
-^[[A^[[A^[[A^[[A^[[A^[[A^[[A^[[A^[[A^[[A^[[A^[[A^[[B^[[B^[[B[('2012-01-01', '2012-01-01'), ('2012-01-01', '2012-05-01')]
-/home/dhananja/.pyenv/versions/3.8.1/lib/python3.8/site-packages/dateparser/date_parser.py:35: PytzUsageWarning: The localize method is no longer necessary, as this time zone supports the fold attribute (PEP 495). For more details on migrating to a PEP 495-compliant implementation, see https://pytz-deprecation-shim.readthedocs.io/en/latest/migration.html
-  date_obj = stz.localize(date_obj)
-[('2012-03-01', '2012-03-01'), ('2012-03-01', '2012-07-01')]
-/home/dhananja/.pyenv/versions/3.8.1/lib/python3.8/site-packages/dateparser/date_parser.py:35: PytzUsageWarning: The localize method is no longer necessary, as this time zone supports the fold attribute (PEP 495). For more details on migrating to a PEP 495-compliant implementation, see https://pytz-deprecation-shim.readthedocs.io/en/latest/migration.html
-  date_obj = stz.localize(date_obj)
-[('2012-05-01', '2012-05-01'), ('2012-05-01', '2012-09-01')]
-/home/dhananja/.pyenv/versions/3.8.1/lib/python3.8/site-packages/dateparser/date_parser.py:35: PytzUsageWarning: The localize method is no longer necessary, as this time zone supports the fold attribute (PEP 495). For more details on migrating to a PEP 495-compliant implementation, see https://pytz-deprecation-shim.readthedocs.io/en/latest/migration.html
-  date_obj = stz.localize(date_obj)
-[('2012-07-01', '2012-07-01'), ('2012-07-01', '2012-11-01')]
-/home/dhananja/.pyenv/versions/3.8.1/lib/python3.8/site-packages/dateparser/date_parser.py:35: PytzUsageWarning: The localize method is no longer necessary, as this time zone supports the fold attribute (PEP 495). For more details on migrating to a PEP 495-compliant implementation, see https://pytz-deprecation-shim.readthedocs.io/en/latest/migration.html
-  date_obj = stz.localize(date_obj)
-[('2012-09-01', '2012-09-01'), ('2012-09-01', '2013-01-01')]
-/home/dhananja/.pyenv/versions/3.8.1/lib/python3.8/site-packages/dateparser/date_parser.py:35: PytzUsageWarning: The localize method is no longer necessary, as this time zone supports the fold attribute (PEP 495). For more details on migrating to a PEP 495-compliant implementation, see https://pytz-deprecation-shim.readthedocs.io/en/latest/migration.html
-  date_obj = stz.localize(date_obj)
-DJRecallAdjuster.py:446: SADeprecationWarning: Calling URL() directly is deprecated and will be disabled in a future release.  The public constructor for URL is now the URL.create() method.
-  dburl = sqlalchemy.engine.url.URL(
-[('2011-03-01', '2011-03-01'), ('2011-03-01', '2011-07-01')]
-/home/dhananja/.pyenv/versions/3.8.1/lib/python3.8/site-packages/dateparser/date_parser.py:35: PytzUsageWarning: The localize method is no longer necessary, as this time zone supports the fold attribute (PEP 495). For more details on migrating to a PEP 495-compliant implementation, see https://pytz-deprecation-shim.readthedocs.io/en/latest/migration.html
-  date_obj = stz.localize(date_obj)
-[('2011-05-01', '2011-05-01'), ('2011-05-01', '2011-09-01')]
-/home/dhananja/.pyenv/versions/3.8.1/lib/python3.8/site-packages/dateparser/date_parser.py:35: PytzUsageWarning: The localize method is no longer necessary, as this time zone supports the fold attribute (PEP 495). For more details on migrating to a PEP 495-compliant implementation, see https://pytz-deprecation-shim.readthedocs.io/en/latest/migration.html
-  date_obj = stz.localize(date_obj)
-[('2011-07-01', '2011-07-01'), ('2011-07-01', '2011-11-01')]
-/home/dhananja/.pyenv/versions/3.8.1/lib/python3.8/site-packages/dateparser/date_parser.py:35: PytzUsageWarning: The localize method is no longer necessary, as this time zone supports the fold attribute (PEP 495). For more details on migrating to a PEP 495-compliant implementation, see https://pytz-deprecation-shim.readthedocs.io/en/latest/migration.html
-  date_obj = stz.localize(date_obj)
-[('2011-09-01', '2011-09-01'), ('2011-09-01', '2012-01-01')]
-/home/dhananja/.pyenv/versions/3.8.1/lib/python3.8/site-packages/dateparser/date_parser.py:35: PytzUsageWarning: The localize method is no longer necessary, as this time zone supports the fold attribute (PEP 495). For more details on migrating to a PEP 495-compliant implementation, see https://pytz-deprecation-shim.readthedocs.io/en/latest/migration.html
-  date_obj = stz.localize(date_obj)
-[('2011-11-01', '2011-11-01'), ('2011-11-01', '2012-03-01')]
-/home/dhananja/.pyenv/versions/3.8.1/lib/python3.8/site-packages/dateparser/date_parser.py:35: PytzUsageWarning: The localize method is no longer necessary, as this time zone supports the fold attribute (PEP 495). For more details on migrating to a PEP 495-compliant implementation, see https://pytz-deprecation-shim.readthedocs.io/en/latest/migration.html
-  date_obj = stz.localize(date_obj)
-[('2012-01-01', '2012-01-01'), ('2012-01-01', '2012-05-01')]
-/home/dhananja/.pyenv/versions/3.8.1/lib/python3.8/site-packages/dateparser/date_parser.py:35: PytzUsageWarning: The localize method is no longer necessary, as this time zone supports the fold attribute (PEP 495). For more details on migrating to a PEP 495-compliant implementation, see https://pytz-deprecation-shim.readthedocs.io/en/latest/migration.html
-  date_obj = stz.localize(date_obj)
-[('2012-03-01', '2012-03-01'), ('2012-03-01', '2012-07-01')]
-/home/dhananja/.pyenv/versions/3.8.1/lib/python3.8/site-packages/dateparser/date_parser.py:35: PytzUsageWarning: The localize method is no longer necessary, as this time zone supports the fold attribute (PEP 495). For more details on migrating to a PEP 495-compliant implementation, see https://pytz-deprecation-shim.readthedocs.io/en/latest/migration.html
-  date_obj = stz.localize(date_obj)
-[('2012-05-01', '2012-05-01'), ('2012-05-01', '2012-09-01')]
-/home/dhananja/.pyenv/versions/3.8.1/lib/python3.8/site-packages/dateparser/date_parser.py:35: PytzUsageWarning: The localize method is no longer necessary, as this time zone supports the fold attribute (PEP 495). For more details on migrating to a PEP 495-compliant implementation, see https://pytz-deprecation-shim.readthedocs.io/en/latest/migration.html
-  date_obj = stz.localize(date_obj)
-[('2012-07-01', '2012-07-01'), ('2012-07-01', '2012-11-01')]
-/home/dhananja/.pyenv/versions/3.8.1/lib/python3.8/site-packages/dateparser/date_parser.py:35: PytzUsageWarning: The localize method is no longer necessary, as this time zone supports the fold attribute (PEP 495). For more details on migrating to a PEP 495-compliant implementation, see https://pytz-deprecation-shim.readthedocs.io/en/latest/migration.html
-  date_obj = stz.localize(date_obj)
-[('2012-09-01', '2012-09-01'), ('2012-09-01', '2013-01-01')]
-/home/dhananja/.pyenv/versions/3.8.1/lib/python3.8/site-packages/dateparser/date_parser.py:35: PytzUsageWarning: The localize method is no longer necessary, as this time zone supports the fold attribute (PEP 495). For more details on migrating to a PEP 495-compliant implementation, see https://pytz-deprecation-shim.readthedocs.io/en/latest/migration.html
-  date_obj = stz.localize(date_obj)
-[01;32mdhananja@ip-10-0-1-114[00m:[01;34m~/peeps-chili/nature_machine_intelligence_2021/education_ccrowdfunding_replication[00m$ python DJRecallAdjuster.py[17Pscreen -r[1Pgit pushcommit -m "Completed DJRecall Adjuster, must test nnow"[A[C[C[C[C[C[C[C[C[C[C[C[C[C[C[C[C[C[C[C[C[C[C[C[C[C[Cadd log.txt[K
-[K[A[C[C[C[C[C[C[C[C[C[C[C[C[C[C[C[C[C[C[C[C[C[C[C[C[C[C[C[C[C[C[C[C[C[C[C[C[C[C[C[C[C[5Pstatusrm log.txtls[Kcd $eprm log.txtls[Kcd ../..ls[Krm log.txt[4Pcd $ep
