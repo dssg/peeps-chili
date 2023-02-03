@@ -24,14 +24,14 @@ DROP TABLE IF EXISTS {{schema}}.tmp_bias_models;
 CREATE TABLE {{schema}}.tmp_bias_models
   AS
   WITH all_end_times AS (
-    SELECT DISTINCT past_train_end_time AS train_end_time FROM tmp_bias_end_times
+    SELECT DISTINCT past_train_end_time AS train_end_time FROM {{schema}}.tmp_bias_end_times
     UNION DISTINCT
-    SELECT DISTINCT future_train_end_time AS train_end_time FROM tmp_bias_end_times
+    SELECT DISTINCT future_train_end_time AS train_end_time FROM {{schema}}.tmp_bias_end_times
   )
   SELECT DISTINCT m.model_id, m.model_group_id, m.train_end_time
-  FROM model_metadata.experiment_models em
-  JOIN model_metadata.models m USING(model_hash)
-  JOIN model_metadata.model_groups mg USING(model_group_id)
+  FROM triage_metadata.experiment_models em
+  JOIN triage_metadata.models m USING(model_hash)
+  JOIN triage_metadata.model_groups mg USING(model_group_id)
   JOIN {{schema}}.all_end_times USING(train_end_time)
   WHERE em.experiment_hash IN ('{{experiment_hashes|join("','")}}')
   {% if exclude_model_groups %}
