@@ -512,7 +512,7 @@ def ra_procedure(weights=[0.99, 0.01], demo_col="majority_white", working_schema
         engine_donors.execute("COMMIT;")
 
         
-def multi_weight_education_ra_procedure():
+def multi_weight_ra_procedure():
     w = 0.99
     print(f"Procedure with weights: {w}")
     ra_procedure(weights=[w, 1-w], alternate_save_names=["save_res_a"])
@@ -550,5 +550,5 @@ def multi_weight_education_ra_procedure():
         
 
 if __name__ == "__main__":
-    ra_procedure(weights=[1, 0], exhaustive=False)
+    multi_weight_ra_procedure()
     
