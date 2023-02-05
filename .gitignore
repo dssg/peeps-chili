@@ -40,3 +40,7 @@ nature_machine_intelligence_2021/education_crowdfunding_replication/db_profile.y
 nature_machine_intelligence_2021/housing_safety/config/db_profile.yaml
 *.log.txt
 *db_*profile*.yaml
+nature_machine_intelligence_2021/el_salvador/log.txt
+nature_machine_intelligence_2021/housing_safety/log.txt
+nature_machine_intelligence_2021/joco/log.txt
+

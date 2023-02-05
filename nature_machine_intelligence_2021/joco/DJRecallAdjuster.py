@@ -451,13 +451,13 @@ def ra_procedure(weights=[0.99, 0.01], demo_col="race_2way", working_schema="kit
     
     
     date_list = ["2013-01-01", "2013-02-01", "2013-03-01", "2013-04-01", "2013-05-01", "2013-06-01", "2013-07-01", "2013-08-01", "2013-09-01", "2013-10-01", "2013-11-01", "2013-12-01", "2014-01-01", "2014-02-01"]
-    date_list = ['2013-04-01', '2014-04-01', '2015-04-01', '2016-04-01', '2017-04-01', '2018-04-01']
+    date_list = ['2014-04-01', '2014-08-01', '2014-12-01', '2015-04-01', '2015-08-01', '2015-12-01', '2016-04-01', '2016-08-01', '2016-12-01', '2017-04-01', '2017-08-01', '2017-12-01', '2018-04-01']
     
     date_pairs_all = []
     for i, d in enumerate(date_list[:-1]):
         date_pairs_all.append((date_list[i], date_list[i]))
         date_pairs_all.append((date_list[i], date_list[i+1]))
-
+        
 
     for dp_idx in range(0, len(date_pairs_all), 2):
         date_pairs = [ date_pairs_all[dp_idx], date_pairs_all[dp_idx+1] ]
