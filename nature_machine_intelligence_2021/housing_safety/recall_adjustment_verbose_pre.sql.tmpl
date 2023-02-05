@@ -28,15 +28,13 @@ CREATE TABLE {{schema}}.tmp_bias_models
     UNION DISTINCT
     SELECT DISTINCT future_train_end_time AS train_end_time FROM {{schema}}.tmp_bias_end_times
   )
-  SELECT DISTINCT m.model_id, m.model_group_id, m.train_end_time
+  SELECT DISTINCT MIN(m.model_id) as model_id, m.model_group_id, m.train_end_time
   FROM triage_metadata.experiment_models em
   JOIN triage_metadata.models m USING(model_hash)
   JOIN triage_metadata.model_groups mg USING(model_group_id)
   JOIN {{schema}}.all_end_times USING(train_end_time)
   WHERE em.experiment_hash IN ('{{experiment_hashes|join("','")}}')
-  {% if exclude_model_groups %}
-    AND mg.model_group_id NOT IN ({{exclude_model_groups|join(",")}})
-  {% endif %}
+  GROUP BY 2, 3
 ;
 ALTER TABLE {{schema}}.tmp_bias_models ADD PRIMARY KEY (model_id);
 
@@ -45,4 +43,4 @@ CREATE TABLE {{schema}}.tmp_bias_end_time_weights AS
 	(SELECT DISTINCT train_end_time, future_train_end_time, 
     {{ date_weight_past_train_end_time_case_str }} AS past_train_end_time, 
     {{ date_weight_case_str }} AS weight 
-    FROM {{ schema }}.all_end_times CROSS JOIN {{schema}}.tmp_bias_end_times ORDER BY train_end_time); 
+    FROM {{ schema }}.all_end_times CROSS JOIN {{schema}}.tmp_bias_end_times ORDER BY train_end_time, future_train_end_time); 

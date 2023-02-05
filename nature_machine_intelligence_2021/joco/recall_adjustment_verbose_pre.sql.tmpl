@@ -42,4 +42,4 @@ CREATE TABLE {{schema}}.tmp_bias_end_time_weights AS
 	(SELECT DISTINCT train_end_time, future_train_end_time, 
     {{ date_weight_past_train_end_time_case_str }} AS past_train_end_time, 
     {{ date_weight_case_str }} AS weight 
-    FROM {{ schema }}.all_end_times CROSS JOIN {{schema}}.tmp_bias_end_times ORDER BY train_end_time); 
+    FROM {{ schema }}.all_end_times CROSS JOIN {{schema}}.tmp_bias_end_times ORDER BY train_end_time, future_train_end_time); 

@@ -147,9 +147,6 @@ class RecallAdjuster(object):
         sql = 'SELECT * FROM %s.model_adjustment_results_%s' % (self.params['schema'], self.params['demo_col'])
         self.adjustment_results = pd.read_sql(sql, self.engine)
 
-        sql = 'SELECT * FROM %s.composite_results_%s' % (self.params['schema'], self.params['demo_col'])
-        self.composite_results = pd.read_sql(sql, self.engine)
-
         self.engine.close()
 
     
@@ -454,6 +451,7 @@ def ra_procedure(weights=[0.99, 0.01], demo_col="race_2way", working_schema="kit
     
     
     date_list = ["2013-01-01", "2013-02-01", "2013-03-01", "2013-04-01", "2013-05-01", "2013-06-01", "2013-07-01", "2013-08-01", "2013-09-01", "2013-10-01", "2013-11-01", "2013-12-01", "2014-01-01", "2014-02-01"]
+    date_list = ['2013-04-01', '2014-04-01', '2015-04-01', '2016-04-01', '2017-04-01', '2018-04-01']
     
     date_pairs_all = []
     for i, d in enumerate(date_list[:-1]):
@@ -467,7 +465,7 @@ def ra_procedure(weights=[0.99, 0.01], demo_col="race_2way", working_schema="kit
         params = {}
         params['pg_role'] = config["user"]
         params['schema'] = working_schema
-        experiment_hashes = ['a33cbdb3208b0df5f4286237a6dbcf8f']
+        experiment_hashes = ['09b3bcab5a6e1eb1c712571f6a5abb75']
         params['experiment_hashes'] = experiment_hashes
         if isinstance(date_pairs[0], str):
             date_pairs = [date_pairs]
@@ -512,7 +510,7 @@ def ra_procedure(weights=[0.99, 0.01], demo_col="race_2way", working_schema="kit
         engine_donors.execute("COMMIT;")
 
         
-def multi_weight_education_ra_procedure():
+def multi_weight_ra_procedure():
     w = 0.99
     print(f"Procedure with weights: {w}")
     ra_procedure(weights=[w, 1-w], alternate_save_names=["save_res_a"])
@@ -550,5 +548,5 @@ def multi_weight_education_ra_procedure():
         
 
 if __name__ == "__main__":
-    ra_procedure(weights=[1, 0], exhaustive=False)
-    
+    #multi_weight_ra_procedure()
+    ra_procedure(weights=[0.5, 0.5])

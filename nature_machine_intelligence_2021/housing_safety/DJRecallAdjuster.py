@@ -147,8 +147,6 @@ class RecallAdjuster(object):
         sql = 'SELECT * FROM %s.model_adjustment_results_%s' % (self.params['schema'], self.params['demo_col'])
         self.adjustment_results = pd.read_sql(sql, self.engine)
 
-        sql = 'SELECT * FROM %s.composite_results_%s' % (self.params['schema'], self.params['demo_col'])
-        self.composite_results = pd.read_sql(sql, self.engine)
 
         self.engine.close()
 
@@ -453,7 +451,7 @@ def ra_procedure(weights=[0.99, 0.01], demo_col="majority_white", working_schema
     engine_donors.execute('COMMIT;')
     
     
-    date_list = ["2011-06-01", "2011-09-01", "2011-12-01", "2012-03-01", "2012-06-01", "2012-09-01", "2012-12-01", "2013-03-01", "2013-06-01", "2013-09-01", "2013-12-01", "2014-03-01", "2014-06-01", "2014-09-01", "2014-12-01", "2015-03-01", "2015-06-01", "2015-09-01", "2015-12-01", "2016-03-01"]
+    date_list = ["2014-06-01", "2014-09-01", "2014-12-01", "2015-03-01", "2015-06-01", "2015-09-01", "2015-12-01", "2016-03-01", '2016-04-01']
     
     date_pairs_all = []
     for i, d in enumerate(date_list[:-1]):
@@ -467,7 +465,7 @@ def ra_procedure(weights=[0.99, 0.01], demo_col="majority_white", working_schema
         params = {}
         params['pg_role'] = config["user"]
         params['schema'] = working_schema
-        experiment_hashes = ['a33cbdb3208b0df5f4286237a6dbcf8f']
+        experiment_hashes = ['357e3a5bc7d3d7cfc2c13db8ea428413']
         params['experiment_hashes'] = experiment_hashes
         if isinstance(date_pairs[0], str):
             date_pairs = [date_pairs]

@@ -477,7 +477,7 @@ CREATE INDEX ON tmp_bias_rolling_recall(train_end_time, demo_value, rn_mg_perf);
 
 {% endif %}
 
-DROP TABLE IF EXISTS {{ schema }}.tmp_bias_rolling_recall CASCADE;
+--DROP TABLE IF EXISTS {{ schema }}.tmp_bias_rolling_recall CASCADE;
 DROP TABLE IF EXISTS {{ schema }}.tmp_bias_rolling_recall_coupled CASCADE;
 DROP TABLE IF EXISTS {{ schema }}.tmp_bias_rolling_recall_decoupled CASCADE;
 

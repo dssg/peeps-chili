@@ -147,8 +147,6 @@ class RecallAdjuster(object):
         sql = 'SELECT * FROM %s.model_adjustment_results_%s' % (self.params['schema'], self.params['demo_col'])
         self.adjustment_results = pd.read_sql(sql, self.engine)
 
-        sql = 'SELECT * FROM %s.composite_results_%s' % (self.params['schema'], self.params['demo_col'])
-        self.composite_results = pd.read_sql(sql, self.engine)
 
         self.engine.close()
 
@@ -467,7 +465,7 @@ def ra_procedure(weights=[0.99, 0.01], demo_col="ovg", working_schema="bias_anal
         params = {}
         params['pg_role'] = config["user"]
         params['schema'] = working_schema
-        experiment_hashes = ['a33cbdb3208b0df5f4286237a6dbcf8f']
+        experiment_hashes = ['4de54db8346981b0bde4947c672437d7']
         params['experiment_hashes'] = experiment_hashes
         if isinstance(date_pairs[0], str):
             date_pairs = [date_pairs]
@@ -512,7 +510,7 @@ def ra_procedure(weights=[0.99, 0.01], demo_col="ovg", working_schema="bias_anal
         engine_donors.execute("COMMIT;")
 
         
-def multi_weight_education_ra_procedure():
+def multi_weight_ra_procedure():
     w = 0.99
     print(f"Procedure with weights: {w}")
     ra_procedure(weights=[w, 1-w], alternate_save_names=["save_res_a"])
@@ -550,5 +548,5 @@ def multi_weight_education_ra_procedure():
         
 
 if __name__ == "__main__":
-    ra_procedure(weights=[1, 0], exhaustive=False)
+    multi_weight_ra_procedure()
     
