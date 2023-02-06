@@ -548,5 +548,5 @@ def multi_weight_ra_procedure():
         
 
 if __name__ == "__main__":
-    #multi_weight_ra_procedure()
-    ra_procedure(weights=[0.5, 0.5])
+    multi_weight_ra_procedure()
+    #ra_procedure(weights=[0.5, 0.5])
