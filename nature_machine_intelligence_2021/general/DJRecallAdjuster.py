@@ -428,7 +428,7 @@ class RecallAdjuster(object):
         return {recall_ratio: ax}
 
     
-def ra_procedure(weights=[0.99, 0.01], demo_col="median_income", working_schema="kit_bias_adj", results_schema="bias_results", list_size=1000, alternate_save_names=[], engine_donors=None, config=None, pause_phases=False, exhaustive=False):
+def ra_procedure(weights=[0.99, 0.01], demo_col="ovg", working_schema="bias_analysis_temp", results_schema="bias_analysis", list_size=1000, alternate_save_names=[], engine_donors=None, config=None, pause_phases=False, exhaustive=False):
     if engine_donors is None or config is None:
         with open('../../config/db_default_profile.yaml') as fd:
             config = yaml.full_load(fd)
@@ -436,12 +436,14 @@ def ra_procedure(weights=[0.99, 0.01], demo_col="median_income", working_schema=
                 "postgresql",
                 host=config["host"],
                 username=config["user"],
-                database="san_jose_housing",
+                database="el_salvador_education",
                 password=config["pass"],
                 port=config["port"],
             )
             engine_donors = sqlalchemy.create_engine(dburl, poolclass=sqlalchemy.pool.QueuePool)
         
+
+    
     engine_donors.execute(f'TRUNCATE TABLE {results_schema}.model_adjustment_results_{demo_col};')
     engine_donors.execute(f'TRUNCATE TABLE {working_schema}.model_adjustment_group_k_{demo_col};')
     if exhaustive:
@@ -451,8 +453,7 @@ def ra_procedure(weights=[0.99, 0.01], demo_col="median_income", working_schema=
     engine_donors.execute('COMMIT;')
     
     
-    date_list = ["2014-06-01", "2014-09-01", "2014-12-01", "2015-03-01", "2015-06-01", "2015-09-01", "2015-12-01", "2016-03-01", '2016-04-01']
-    
+    date_list = ["2010-01-01", "2011-01-01", "2012-01-01", "2013-01-01", "2014-01-01", "2015-01-01", "2016-01-01"]
     date_pairs_all = []
     for i, d in enumerate(date_list[:-1]):
         date_pairs_all.append((date_list[i], date_list[i]))
@@ -465,7 +466,7 @@ def ra_procedure(weights=[0.99, 0.01], demo_col="median_income", working_schema=
         params = {}
         params['pg_role'] = config["user"]
         params['schema'] = working_schema
-        experiment_hashes = ['357e3a5bc7d3d7cfc2c13db8ea428413']
+        experiment_hashes = ['4de54db8346981b0bde4947c672437d7']
         params['experiment_hashes'] = experiment_hashes
         if isinstance(date_pairs[0], str):
             date_pairs = [date_pairs]

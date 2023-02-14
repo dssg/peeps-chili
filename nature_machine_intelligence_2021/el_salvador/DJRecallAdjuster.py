@@ -24,8 +24,8 @@ except (ImportError, RuntimeError) as e:
 
 
 ENTITY_DEMO_FILES = {
-    'joco': {
-        'sql_tmpl': 'joco_entity_demos.sql.tmpl',
+    'el_salvador_education': {
+        'sql_tmpl': 'el_salvador_education_entity_demos.sql.tmpl',
         'check_sql': """
             WITH all_matches AS (
                 SELECT COUNT(DISTINCT ((mg.model_config->'matchdatetime')::VARCHAR)::TIMESTAMP) AS num_match
@@ -465,7 +465,7 @@ def ra_procedure(weights=[0.99, 0.01], demo_col="ovg", working_schema="bias_anal
         params = {}
         params['pg_role'] = config["user"]
         params['schema'] = working_schema
-        experiment_hashes = ['4de54db8346981b0bde4947c672437d7']
+        experiment_hashes = ['1389879cda302717c1e258fefa6ea1a9','273fba59016d9ac39f25d5c654866c2d', '41c9ca9094772dbb886db530f7988cb6', '58669c16e9e0054273346eefa313922d', 'af0453996be5ae6ee2bcfbc145a8dca6', 'de9c7c65bf2f49252abfd1e89d4b9e7c', 'fb8fa78e0fc7c1ab9f21f2536091d9a3']
         params['experiment_hashes'] = experiment_hashes
         if isinstance(date_pairs[0], str):
             date_pairs = [date_pairs]

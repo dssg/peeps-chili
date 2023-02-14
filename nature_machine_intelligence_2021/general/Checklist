@@ -1,0 +1,5 @@
+Change the database engine and config details in DJRecallAdjuster.py around line 26 (idt this matters), 432
+Ensure that the model_group_k table exists: CREATE TABLE {schema/rschema}.model_adjustment_group_k_{demo_col} AS (SELECT 'h' as model_group_id, '2011-06-01 00:00:00'::TIMESTAMP as train_end_time, 'h' as demo_value, 5 as group_k FROM {any table})
+    Then truncate it
+Ensure that the all_end_times table exists: CREATE TABLE {schema}.all_end_times as SELECT '2011-06-01 00:00:00'::TIMESTAMP as train_end_time FROM {anytable} then truncate and insert the dates you are actually using
+ Make sure you are using the right experiment hash and that should be it I think
