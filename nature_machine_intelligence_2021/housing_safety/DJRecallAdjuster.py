@@ -436,7 +436,7 @@ def ra_procedure(weights=[0.99, 0.01], demo_col="median_income", working_schema=
                 "postgresql",
                 host=config["host"],
                 username=config["user"],
-                database="san_jose_housing",
+                database="san_jose_housing_triage",
                 password=config["pass"],
                 port=config["port"],
             )
