@@ -1,0 +1,120 @@
+-- Rolling Recall: sorted subgroups with subgroup recall up to that individual
+DROP TABLE IF EXISTS {{ schema }}.tmp_bias_rolling_recall CASCADE;
+CREATE TABLE {{ schema }}.tmp_bias_rolling_recall
+AS
+WITH preds AS (
+  SELECT mods.train_end_time, mods.model_group_id, p.model_id, p.entity_id, p.as_of_date, p.score, p.label_value,
+         row_number() OVER (PARTITION BY p.model_id ORDER BY p.score DESC, RANDOM()) AS model_rank
+  FROM test_results.predictions p
+  JOIN {{schema}}.tmp_bias_models mods USING(model_id)
+  {% if subsample or bootstrap %}
+  -- only retain entities in the subsample/bootstrap, if using
+  JOIN tmp_bias_sample USING(entity_id, as_of_date)
+  {% endif %}
+)
+, demo AS (
+  SELECT p.entity_id, p.train_end_time, p.model_group_id, p.model_id, p.score, p.label_value, p.model_rank,
+         '{{demo_col}}'::VARCHAR(256) AS demo_col, {{demo_col}} AS demo_value
+  FROM {{entity_demos}} d
+  JOIN preds p USING(entity_id, as_of_date)
+)
+, demo_rn AS (
+  SELECT *, ROW_NUMBER() OVER (PARTITION BY model_id, demo_value ORDER BY model_rank ASC, RANDOM()) AS rn_demo
+  FROM demo
+)
+, rolling_recall AS (
+  SELECT *,
+         COUNT(*) OVER w_roll AS num_demo_rolling,
+         SUM(label_value) OVER w_roll AS tp_demo_rolling,
+         1.0000*(SUM(label_value) OVER w_roll)/(SUM(label_value) OVER w_all) AS recall_demo_rolling
+  FROM demo_rn
+  WINDOW w_roll AS (PARTITION BY model_id, demo_value ORDER BY rn_demo ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW),
+         w_all AS (PARTITION BY model_id, demo_value)
+)
+SELECT *, 
+        1.0000*tp_demo_rolling/num_demo_rolling AS precision_demo_rolling,
+        -- TODO: model_rank as tie breaker respects ordering of the scores, but may favor groups with higher
+        --       precision if there are many ties to break across multiple groups.
+        ROW_NUMBER() OVER (PARTITION BY model_id ORDER BY recall_demo_rolling ASC, model_rank ASC) AS rn_recall,
+        ROW_NUMBER() OVER (PARTITION BY train_end_time, demo_col, demo_value, rn_demo ORDER BY 1.0000*tp_demo_rolling/num_demo_rolling DESC, RANDOM()) AS rn_mg_perf
+FROM rolling_recall
+ORDER BY model_group_id, model_id, rn_demo
+;
+CREATE INDEX ON {{ schema }}.tmp_bias_rolling_recall(train_end_time, model_group_id, demo_value, num_demo_rolling);
+CREATE INDEX ON {{ schema }}.tmp_bias_rolling_recall(train_end_time, model_group_id, rn_recall);
+CREATE INDEX ON {{ schema }}.tmp_bias_rolling_recall(train_end_time, demo_value, rn_mg_perf);
+
+
+
+-- Model performance overall with no adjustments for disparities
+DROP TABLE IF EXISTS {{ schema }}.tmp_bias_mod_overall_group_nums;
+CREATE TABLE {{ schema }}.tmp_bias_mod_overall_group_nums AS (
+    -- For base values (what we'd get just taking the top 500 w/o recall adjustments) we simply look
+    -- at the group numbers implied for each `future_train_end_time` at the overall list size
+    SELECT 'base'::VARCHAR(256) AS method, rr.model_group_id, et.past_train_end_time, et.future_train_end_time, 
+           list_size, rr.demo_value, COUNT(*) AS group_k
+    FROM {{schema}}.tmp_bias_rolling_recall rr
+    JOIN {{schema}}.tmp_bias_end_times et ON rr.train_end_time = et.future_train_end_time
+    CROSS JOIN {{schema}}.tmp_bias_list_sizes
+    WHERE model_rank <= list_size
+    GROUP BY 1,2,3,4,5,6
+);
+
+
+-- Models Performance After Adjustment
+-- Subgroup list sizes are determined based on the past train_end_time then applied forward
+-- to the corresponding future train_end_time for performance evaluation on novel data
+DROP TABLE IF EXISTS {{ schema }}.tmp_bias_mod_adjusted_group_nums;
+CREATE TABLE {{ schema }}.tmp_bias_mod_adjusted_group_nums AS (
+    -- We don't know the outcomes for the predict forward model, so we select the same number of individuals
+    -- that balanced recall by group in the model for the previous time split. Note that this makes the
+    -- important assumption that relative precision across groups is reasonably stable over time, which should
+    -- be validated in an ongoing manner.
+    SELECT 'adjusted'::VARCHAR(256) AS method, rr.model_group_id, et.past_train_end_time, et.future_train_end_time, 
+           list_size, rr.demo_value, COUNT(*) AS group_k
+    FROM {{schema}}.tmp_bias_rolling_recall rr
+    JOIN {{schema}}.tmp_bias_end_times et ON rr.train_end_time = et.past_train_end_time
+    CROSS JOIN {{schema}}.tmp_bias_list_sizes
+    WHERE rn_recall <= list_size
+    GROUP BY 1,2,3,4,5,6
+); 
+
+INSERT INTO {{ schema }}.model_adjustment_group_k_{{ demo_col }}
+SELECT gn.model_group_id , gn.past_train_end_time as train_end_time, gn.demo_value, gn.group_k 
+FROM {{schema}}.tmp_bias_mod_adjusted_group_nums gn;
+
+
+-- Models Performance After Multi Time Step Adjustment
+DROP TABLE IF EXISTS {{ schema }}.tmp_bias_mod_multi_adjusted_group_nums;
+CREATE TABLE {{ schema }}.tmp_bias_mod_multi_adjusted_group_nums AS (
+    WITH tmp_group_k AS (
+        SELECT model_group_id , train_end_time::TIMESTAMP , demo_value , CASE WHEN demo_value  = 'highest' THEN CEILING(AVG(group_k)) 
+        ELSE FLOOR(AVG(group_k)) END AS group_k 
+        FROM {{schema}}.model_adjustment_group_k_{{ demo_col }} group by 1, 2, 3 order by 1, 2, 3
+        )
+    SELECT 'combined' as method, model_group_id, past_train_end_time, future_train_end_time, list_size, demo_value,
+        CASE WHEN demo_value='highest' then CEILING(SUM(weight * group_k)) ELSE FLOOR(SUM(weight * group_k)) END AS group_k
+        FROM (tmp_group_k NATURAL JOIN {{schema}}.tmp_bias_end_time_weights tbetw) 
+        CROSS JOIN {{schema}}.tmp_bias_list_sizes tbls group by 1, 2, 3, 4, 5, 6 order by model_group_id, future_train_end_time
+);
+
+
+DROP TABLE IF EXISTS {{ schema }}.tmp_selected_entities;
+CREATE TABLE {{ schema }}.tmp_selected_entities as 
+(SELECT rr.model_group_id, rr.train_end_time, entity_id, score, label_value, model_rank, rn_demo
+  FROM {{ schema }}.tmp_bias_rolling_recall rr
+  JOIN {{ schema }}.tmp_bias_mod_multi_adjusted_group_nums gn
+    ON gn.model_group_id = rr.model_group_id
+    AND gn.future_train_end_time = rr.train_end_time
+    AND gn.demo_value = rr.demo_value
+    AND rr.num_demo_rolling <= gn.group_k);
+    
+    
+
+
+--DROP TABLE IF EXISTS {{ schema }}.tmp_bias_rolling_recall CASCADE;
+DROP TABLE IF EXISTS {{ schema }}.tmp_bias_rolling_recall_coupled CASCADE;
+DROP TABLE IF EXISTS {{ schema }}.tmp_bias_rolling_recall_decoupled CASCADE;
+
+
+

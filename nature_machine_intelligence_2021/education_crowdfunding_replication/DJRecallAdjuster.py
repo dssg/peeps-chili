@@ -46,7 +46,7 @@ class RecallAdjuster(object):
         engine,
         params,
         pause_phases=False, 
-        exhaustive=False):
+        exhaustive=False, entity_analysis=True):
         """
         Arguments:
             engine: 
@@ -110,7 +110,11 @@ class RecallAdjuster(object):
         self.validate_dates()
 
         # create a few temporary tables we'll need for calculations
-        sql = Template(open('recall_adjustment_pre.sql.tmpl', 'r').read()).render(**self.params)
+        if entity_analysis:
+            template_file = "quick_adjustment_pre.sql.tmpl"
+        else:
+            template_file = "recall_adjustment_pre.sql.tmpl"
+        sql = Template(open(template_file, 'r').read()).render(**self.params)
         self.engine.execute(sql)
         self.engine.execute("COMMIT")
         
@@ -134,7 +138,10 @@ class RecallAdjuster(object):
 
         # pre-calculate the results for all models, date pairs
         if not exhaustive:
-            sql = Template(open('recall_adjustment_verbose.sql.tmpl', 'r').read()).render(**self.params)
+            if not entity_analysis:
+                sql = Template(open('recall_adjustment_verbose.sql.tmpl', 'r').read()).render(**self.params)
+            else:
+                sql = Template(open('entity_selection.sql.tmpl', 'r').read()).render(**self.params)
         else:
             sql = Template(open('recall_adjustment_exhaustive.sql.tmpl', 'r').read()).render(**self.params)
         self.engine.execute(sql)
@@ -143,12 +150,14 @@ class RecallAdjuster(object):
         if pause_phases:
             input(f"Date Pair: {self.params['date_pairs']} Adjustment Done")
 
-        # store the results to dataframes for subsequent plotting and analysis
-        sql = 'SELECT * FROM %s.model_adjustment_results_%s' % (self.params['schema'], self.params['demo_col'])
-        self.adjustment_results = pd.read_sql(sql, self.engine)
+        if not entity_analysis:
+            # store the results to dataframes for subsequent plotting and analysis
+            sql = 'SELECT * FROM %s.model_adjustment_results_%s' % (self.params['schema'], self.params['demo_col'])
+            self.adjustment_results = pd.read_sql(sql, self.engine)
 
-        sql = 'SELECT * FROM %s.composite_results_%s' % (self.params['schema'], self.params['demo_col'])
-        self.composite_results = pd.read_sql(sql, self.engine)
+            sql = 'SELECT * FROM %s.composite_results_%s' % (self.params['schema'], self.params['demo_col'])
+            self.composite_results = pd.read_sql(sql, self.engine)
+            
 
         self.engine.close()
 
@@ -555,7 +564,104 @@ def education_ra_procedure(weights=[0.99, 0.01], alternate_save_names=[], engine
         sql = f"DROP TABLE IF EXISTS bias_results.{save_name}; CREATE TABLE bias_results.{save_name} AS SELECT * FROM bias_results.model_adjustment_results_{demo_col};"
         engine_donors.execute(sql)
         engine_donors.execute("COMMIT;")
+        
+        
+def entity_analysis_single( engine_donors, config, weights=[0.99, 0.01], pause_phases=False):
+    engine_donors.execute('TRUNCATE TABLE bias_working.model_adjustment_group_k_plevel;')
+    engine_donors.execute('COMMIT;')
+    date_pairs_all = [
+     ('2011-03-01', '2011-03-01'),
+     ('2011-03-01', '2011-07-01'),
 
+     ('2011-05-01', '2011-05-01'),
+     ('2011-05-01', '2011-09-01'),   
+
+     ('2011-07-01', '2011-07-01'),
+     ('2011-07-01', '2011-11-01'),
+
+     ('2011-09-01', '2011-09-01'),
+     ('2011-09-01', '2012-01-01'),
+
+     ('2011-11-01', '2011-11-01'),
+     ('2011-11-01', '2012-03-01'),
+
+     ('2012-01-01', '2012-01-01'),
+     ('2012-01-01', '2012-05-01'),
+
+     ('2012-03-01', '2012-03-01'),
+     ('2012-03-01', '2012-07-01'),
+
+     ('2012-05-01', '2012-05-01'),
+     ('2012-05-01', '2012-09-01'),
+
+     ('2012-07-01', '2012-07-01'),
+     ('2012-07-01', '2012-11-01'),
+
+     ('2012-09-01', '2012-09-01'),
+     ('2012-09-01', '2013-01-01')
+     ]
+
+    date_list = ['2011-03-01', '2011-05-01', '2011-07-01', '2011-09-01', '2011-11-01', '2012-01-01', '2012-03-01', '2012-05-01', '2012-07-01', '2012-09-01', '2012-11-01', '2013-01-01']
+    
+    for dp_idx in range(10):
+        date_pairs = [ date_pairs_all[2*dp_idx], date_pairs_all[2*dp_idx+1] ]
+        print(date_pairs)
+        params = {}
+        params['pg_role'] = config["user"]
+        params['schema'] = 'bias_working'
+        experiment_hashes = ['a33cbdb3208b0df5f4286237a6dbcf8f']
+        params['experiment_hashes'] = experiment_hashes
+        if isinstance(date_pairs[0], str):
+            date_pairs = [date_pairs]
+        params['date_pairs'] = date_pairs
+        params['date_list'] = date_list
+        params['weights'] = weights
+        params['list_sizes'] = [1000]
+        params['demo_col'] = 'plevel'
+        params['subsample'] = False
+        params['bootstrap'] = False
+        params['entity_demos']='bias_working.entity_demos'
+
+
+        engine=engine_donors
+        ra = RecallAdjuster(engine=engine, params=params, pause_phases=pause_phases, entity_analysis=True)
+        if weights[0] == 0.99:
+            engine_donors.execute(f"DROP TABLE IF EXISTS bias_results.selected_entities")
+            engine_donors.execute("COMMIT")
+            engine_donors.execute(f"""
+                    CREATE TABLE bias_results.selected_entities AS
+                    SELECT *, {weights[0]} as weight FROM bias_working.tmp_selected_entities;
+                """)
+        else:
+            engine_donors.execute(f"""
+                    INSERT INTO bias_results.selected_entities 
+                    SELECT *, {weights[0]} as weight FROM bias_working.tmp_selected_entities;
+                """)
+        engine_donors.execute("COMMIT")
+        
+def entity_analysis_procedure(engine_donors=None, config=None, pause_phases=False):
+    if engine_donors is None or config is None:
+        with open('db_profile.yaml') as fd:
+            config = yaml.full_load(fd)
+            dburl = sqlalchemy.engine.url.URL.create(
+                "postgresql",
+                host=config["host"],
+                username=config["user"],
+                database=config["db"],
+                password=config["pass"],
+                port=config["port"],
+            )
+            engine_donors = sqlalchemy.create_engine(dburl, poolclass=sqlalchemy.pool.QueuePool)
+        
+    engine_donors.execute('TRUNCATE TABLE bias_working.model_adjustment_results_plevel;')
+    engine_donors.execute('INSERT INTO bias_working.model_adjustment_results_plevel SELECT * FROM bias_results.model_adjustment_results_plevel')
+    engine_donors.execute('COMMIT;')
+    ws = [0.99, 0.9, 0.8, 0.7, 0.6, 0.5, 0.4, 0.3, 0.2, 0.1, 0.01]
+    for w in ws:
+        weights = [w, 1-w]
+        print(w)
+        entity_analysis_single(engine_donors, config, weights=weights, pause_phases=pause_phases)
+    
         
 def multi_weight_education_ra_procedure():
     w = 0.99
@@ -595,5 +701,5 @@ def multi_weight_education_ra_procedure():
         
 
 if __name__ == "__main__":
-    education_ra_procedure(weights=[1, 0], exhaustive=False)
+    entity_analysis_procedure(pause_phases=False)
     

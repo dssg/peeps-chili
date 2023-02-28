@@ -28,15 +28,34 @@ CREATE  TABLE {{schema}}.tmp_bias_models
     UNION DISTINCT
     SELECT DISTINCT future_train_end_time AS train_end_time FROM {{schema}}.tmp_bias_end_times
   )
+  , mg_rns AS (
+      SELECT *,
+             row_number() OVER (PARTITION BY train_end_time, list_size, metric, parameter ORDER BY adj_value DESC, adj_max_recall_ratio ASC, RANDOM()) AS rn_adj 
+      FROM {{ schema }}.model_adjustment_results_{{demo_col}}
+      WHERE past_train_end_time = train_end_time
+    )
+  , adj_mgs AS (
+      SELECT * FROM mg_rns WHERE rn_adj = 1
+    )
+  , selection as (
+      SELECT r.model_id, r.model_group_id, r.train_end_time 
+      FROM {{ schema }}.model_adjustment_results_{{demo_col}} r JOIN adj_mgs b
+      ON r.model_group_id = b.model_group_id
+      AND r.past_train_end_time = b.train_end_time
+      AND r.list_size = b.list_size
+      AND r.metric = b.metric
+      AND r.parameter = b.parameter
+    WHERE r.train_end_time > r.past_train_end_time
+    )
   SELECT DISTINCT m.model_id, m.model_group_id, m.train_end_time
   FROM model_metadata.experiment_models em
   JOIN model_metadata.models m USING(model_hash)
   JOIN model_metadata.model_groups mg USING(model_group_id)
   JOIN all_end_times USING(train_end_time)
   WHERE em.experiment_hash IN ('{{experiment_hashes|join("','")}}')
-  GROUP BY 2, 3
-  --WHERE m.model_group_id IN ({{model_group_ids|join(",")}})
-;
+  AND m.model_group_id IN (select model_group_id from selection)
+  GROUP BY 1, 2, 3;
+  
 ALTER TABLE {{schema}}.tmp_bias_models ADD PRIMARY KEY (model_id);
 
 DROP TABLE IF EXISTS {{schema}}.tmp_bias_end_time_weights;
