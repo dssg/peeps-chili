@@ -428,7 +428,7 @@ class RecallAdjuster(object):
         return {recall_ratio: ax}
 
     
-def ra_procedure(weights=[0.99, 0.01], demo_col="median_income", working_schema="kit_bias_adj", results_schema="bias_results", list_size=1000, alternate_save_names=[], engine_donors=None, config=None, pause_phases=False, exhaustive=False):
+def ra_procedure(weights=[0.99, 0.01], demo_col="median_income", working_schema="kit_bias_adj", results_schema="bias_results", list_size=500, alternate_save_names=[], engine_donors=None, config=None, pause_phases=False, exhaustive=False):
     if engine_donors is None or config is None:
         with open('../../config/db_default_profile.yaml') as fd:
             config = yaml.full_load(fd)
@@ -548,5 +548,5 @@ def multi_weight_ra_procedure():
         
 
 if __name__ == "__main__":
-    multi_weight_ra_procedure()
-    
+    #multi_weight_ra_procedure()
+    ra_procedure(weights=[1, 0])
