@@ -53,7 +53,7 @@ CREATE  TABLE {{schema}}.tmp_bias_models
   JOIN model_metadata.model_groups mg USING(model_group_id)
   JOIN all_end_times USING(train_end_time)
   WHERE em.experiment_hash IN ('{{experiment_hashes|join("','")}}')
-  AND m.model_group_id IN (select model_group_id from selection) AND m.model_group_id = 942
+  AND m.model_group_id IN (select model_group_id from selection) AND m.model_group_id = 105
   GROUP BY 1, 2, 3;
   
 ALTER TABLE {{schema}}.tmp_bias_models ADD PRIMARY KEY (model_id);

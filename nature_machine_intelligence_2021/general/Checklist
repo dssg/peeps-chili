@@ -3,3 +3,5 @@ Ensure that the model_group_k table exists: CREATE TABLE {schema/rschema}.model_
     Then truncate it
 Ensure that the all_end_times table exists: CREATE TABLE {schema}.all_end_times as SELECT '2011-06-01 00:00:00'::TIMESTAMP as train_end_time FROM {anytable} then truncate and insert the dates you are actually using
  Make sure you are using the right experiment hash and that should be it I think
+ 
+For entity analysis must run once and make a working_schema.model_adjustment_results_{{demo_col}} copy of the results table

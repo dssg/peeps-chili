@@ -46,9 +46,7 @@ class RecallAdjuster(object):
         engine,
         params,
         pause_phases=False, 
-        exhaustive=False, 
-        small_model_selection=False, 
-        entity_selection=False):
+        exhaustive=False, entity_analysis=False, output_analysis=False):
         """
         Arguments:
             engine: 
@@ -86,7 +84,7 @@ class RecallAdjuster(object):
                     experiments, for instance in cases where entity_ids may differ between modeling runs
                     such as is the case with JoCo matches. If specified, must be pre-computed.
                 entity_demos:
-                    e.g: {working_schema}.entity_demos
+                    e.g: bias_working.entity_demos
                 weights:
                     Weighting scheme for multi adjustment as a list of fractions
                 date_list:
@@ -97,10 +95,6 @@ class RecallAdjuster(object):
                 True if you want a break after each phase requiring user input to continue
             exhaustive:
                 Runs bias adjustment with group_k +- 50 on both sides to measure stability of results to adjustment thresholds
-            small_model_selection:
-                True if you want to use the model_adjustment_results_{demo_col} table to select only the best models for the next step of recall adjustment. 
-            entity_selection:
-                Runs entity selection instead of recall adjustment
         """
 
         # store parameters
@@ -116,12 +110,12 @@ class RecallAdjuster(object):
         self.validate_dates()
 
         # create a few temporary tables we'll need for calculations
-        if small_model_selection:
-            pre_file = "quick_adjustment_pre.sql.tmpl"
+        if entity_analysis or output_analysis:
+            template_file = "quick_adjustment_pre.sql.tmpl"
         else:
-            pre_file = "recall_adjustment_verbose_pre.sql.tmpl"
-        
-        sql = Template(open(pre_file, 'r').read()).render(**self.params)
+            template_file = "recall_adjustment_pre.sql.tmpl"
+            template_file = "quick_adjustment_pre.sql.tmpl"
+        sql = Template(open(template_file, 'r').read()).render(**self.params)
         self.engine.execute(sql)
         self.engine.execute("COMMIT")
         
@@ -131,8 +125,10 @@ class RecallAdjuster(object):
         entity_demos = self.params['entity_demos']
         if entity_demos.find('.') > -1:
             self.params['entity_demos'] = entity_demos
+        elif entity_demos in ENTITY_DEMO_FILES.keys():
+            self.params['entity_demos'] = self.create_entity_demos(entity_demos)
         else:
-            raise ValueError('Error: entity_demos must be either `schema.table_name`')
+            raise ValueError('Error: entity_demos must be either `schema.table_name` OR one of (%s)' % ', '.join(ENTITY_DEMO_FILES.keys()))
 
         # calculate demo values for general use, ordered by frequency
         sql = "SELECT %s, COUNT(*) AS num FROM %s GROUP BY 1 ORDER BY 2 DESC" % (self.params['demo_col'], self.params['entity_demos'])
@@ -142,22 +138,27 @@ class RecallAdjuster(object):
         
 
         # pre-calculate the results for all models, date pairs
-        adjustment_file = 'recall_adjustment_verbose.sql.tmpl'
-        if exhaustive:
-            adjustment_file = "recall_adjustment_exhaustive.sql.tmpl"
-        if entity_selection:
-            adjustment_file = "entity_selection.sql.tmpl"
-        sql = Template(open(adjustment_file, 'r').read()).render(**self.params)
+        if not exhaustive:
+            if not entity_analysis:
+                sql = Template(open('recall_adjustment_verbose.sql.tmpl', 'r').read()).render(**self.params)
+            else:
+                sql = Template(open('entity_selection.sql.tmpl', 'r').read()).render(**self.params)
+        else:
+            sql = Template(open('recall_adjustment_exhaustive.sql.tmpl', 'r').read()).render(**self.params)
         self.engine.execute(sql)
         self.engine.execute("COMMIT")
         
         if pause_phases:
             input(f"Date Pair: {self.params['date_pairs']} Adjustment Done")
 
-        # store the results to dataframes for subsequent plotting and analysis
-        sql = 'SELECT * FROM %s.model_adjustment_results_%s' % (self.params['schema'], self.params['demo_col'])
-        self.adjustment_results = pd.read_sql(sql, self.engine)
+        if not entity_analysis:
+            # store the results to dataframes for subsequent plotting and analysis
+            sql = 'SELECT * FROM %s.model_adjustment_results_%s' % (self.params['schema'], self.params['demo_col'])
+            self.adjustment_results = pd.read_sql(sql, self.engine)
 
+            sql = 'SELECT * FROM %s.composite_results_%s' % (self.params['schema'], self.params['demo_col'])
+            self.composite_results = pd.read_sql(sql, self.engine)
+            
 
         self.engine.close()
 
@@ -165,7 +166,7 @@ class RecallAdjuster(object):
     def get_date_weights(self):
         weights = self.params['weights']
         date_list = self.params['date_list']
-        min_separation = self.params.get('min_separations', 1)
+        min_separation = self.params.get('min_separations', 2)
         date_weights = {}
         i_lim = len(weights)
         assert i_lim >= min_separation
@@ -227,6 +228,58 @@ class RecallAdjuster(object):
                 if dateparser.parse(past) > dateparser.parse(future):
                     raise ValueError('Error! Cannot validate on the past. %s should be no earlier than %s.' % (future, past))
 
+
+    def do_bootstrap(self):
+        # FIXME: Right now bootstrap sampling relies on duplicate entity_id values in tmp_bias_sample
+        #        not creating downstream issues. This should be true currently, but is a bit of a
+        #        risky assumption should someone change downstream code to either de-dupe on entity
+        #        or potentially introduce dupes elsewhere that could result in a many-to-many join...
+        self.engine.execute("DROP TABLE IF EXISTS tmp_bias_sample;")
+        self.engine.execute("""
+            CREATE LOCAL TEMPORARY TABLE tmp_bias_sample (
+                    entity_id INT,
+                    as_of_date DATE
+                ) ON COMMIT PRESERVE ROWS;
+            """)
+        self.engine.execute("COMMIT;")
+
+        # gross nested for loop that could probably be done away with, but sizes should be pretty small, so meh...
+        for as_of_date in set([dt for dt_pair in self.params['date_pairs'] for dt in dt_pair]):
+            tot_size = self.engine.execute("SELECT COUNT(DISTINCT entity_id) FROM %s WHERE as_of_date='%s'::DATE" % (self.params['entity_demos'], as_of_date)).fetchall()[0][0]
+            for demo_value, demo_frac in self.params['bootstrap_weights'].items():
+                demo_size = round(tot_size*demo_frac)
+                all_entities = self.engine.execute("""
+                    SELECT DISTINCT entity_id
+                    FROM {entity_demos}
+                    WHERE {demo_col} = '{demo_value}'
+                        AND as_of_date = '{as_of_date}'::DATE
+                    ;
+                    """.format(
+                        entity_demos=self.params['entity_demos'], 
+                        demo_col=self.params['demo_col'],
+                        demo_value=demo_value,
+                        as_of_date=as_of_date
+                        ))
+                all_entities = np.array([row[0] for row in all_entities])
+                bs_entities = np.random.choice(all_entities, size=demo_size, replace=True)
+                bs_entities = np.array([[e, as_of_date] for e in bs_entities])
+                pg_copy_to_table(bs_entities, 'tmp_bias_sample', self.engine, columns=['entity_id', 'as_of_date'], fmt=('%s', '%s'))
+                self.engine.execute("COMMIT;")
+        self.engine.execute("CREATE INDEX ON tmp_bias_sample(entity_id, as_of_date);")
+
+
+    def create_entity_demos(self, entity_demos):
+        sql_file = ENTITY_DEMO_FILES[entity_demos]['sql_tmpl']
+        sql = Template(open(sql_file, 'r').read()).render(**self.params)
+        self.engine.execute(sql)
+        self.engine.execute("COMMIT")
+
+        # consistency check:
+        check_sql = ENTITY_DEMO_FILES[entity_demos]['check_sql']
+        if not self.engine.execute(check_sql).fetchall()[0][0]:
+            raise RuntimeError('Entity Demos failed consistency check:\n %s' % check_sql)
+
+        return '%s.entity_demos' % self.params['schema']
 
 
     def plot(
@@ -385,163 +438,270 @@ class RecallAdjuster(object):
         # plt.show()
 
         return {recall_ratio: ax}
+
     
-def ra_procedure(weights=[0.99, 0.01], demo_col="median_income", working_schema="kit_bias_adj", results_schema="bias_results", list_size=500, alternate_save_names=[], engine_donors=None, config=None, pause_phases=False, exhaustive=False, entity_selection=False, small_model_selection=False):
+def education_ra_procedure(weights=[0.99, 0.01], alternate_save_names=[], engine_donors=None, config=None, pause_phases=False, exhaustive=False):
+    """
+    Because of the size of the data, we're going to do this iteratively over subsets of validation set dates to avoid running into memory issues, but depending on your dataset and database server, you could instead simply run the `RecallAdjuster` once with the full set of date pairs.
+    
+    date_pairs: The code needs a "previous" validation set to learn the group-specific thresholds to equalize recall on the "current" validation set. Additionally, for every date used as a "previous" validation set, we include a pair with this set as both the "previous" and "current" date (to allow for selecting a model based on post-adjustment performance on the previous set)
+    pg_role: Allows you to set a different role in postgres if needed, but generally will be the same as your postgres user
+    schema: We'll use `bias_working` for the intermediate results of each iteration, but then will collect all of these into the `bias_results` schema
+    experiment_hashes: Triage tracks runs of a grid of models via an "experiment" object, identified by this hash. The one coded here is for the set of models described in the study
+    list_sizes: The overall "top k" size(s) to consider (can be a list of multiple, but if so, you'll need to be careful to modify the results query above to choose just one at a time)
+    entity_demos: This is a postgres table containing a lookup between entities (here, projects), dates, and demographics of interest for bias analysis. Here, `bias_working.entity_demos` contains the school poverty levels determined from the project data.
+    demo_col: The specific column of interest for the bias analysis. Here, `plevel` is the school poverty level.
+    """
     if engine_donors is None or config is None:
-        with open('../../config/db_default_profile.yaml') as fd:
+        with open('db_profile.yaml') as fd:
             config = yaml.full_load(fd)
             dburl = sqlalchemy.engine.url.URL.create(
                 "postgresql",
                 host=config["host"],
                 username=config["user"],
-                database="san_jose_housing_triage",
+                database=config["db"],
                 password=config["pass"],
                 port=config["port"],
             )
             engine_donors = sqlalchemy.create_engine(dburl, poolclass=sqlalchemy.pool.QueuePool)
         
-    
-    date_list = ["2014-06-01", "2014-09-01", "2014-12-01", "2015-03-01", "2015-06-01", "2015-09-01", "2015-12-01", "2016-03-01", '2016-04-01']
-    
-    date_pairs_all = []
-    for i, d in enumerate(date_list[:-1]):
-        date_pairs_all.append((date_list[i], date_list[i]))
-        date_pairs_all.append((date_list[i], date_list[i+1]))
+    engine_donors.execute('TRUNCATE TABLE bias_results.composite_results_plevel;')
+    engine_donors.execute('TRUNCATE TABLE bias_results.model_adjustment_results_plevel;')
+    engine_donors.execute('TRUNCATE TABLE bias_working.model_adjustment_group_k_plevel;')
+    if exhaustive:
+        for al in string.ascii_lowercase[:10]:
+            engine_donors.execute(f'TRUNCATE TABLE bias_results.exhaustive_{al};')
         
-        common_params = {"pg_role": config["user"], "schema": working_schema, "experiment_hashes": ['357e3a5bc7d3d7cfc2c13db8ea428413'], 'demo_col': demo_col, "subsample": False, "bootstrap": False, "entity_demos":f'{working_schema}.entity_demos', "list_sizes": [list_size], "date_list": date_list}
+    engine_donors.execute('COMMIT;')
+    date_pairs_all = [
+     ('2011-03-01', '2011-03-01'),
+     ('2011-03-01', '2011-07-01'),
+
+     ('2011-05-01', '2011-05-01'),
+     ('2011-05-01', '2011-09-01'),   
+
+     ('2011-07-01', '2011-07-01'),
+     ('2011-07-01', '2011-11-01'),
+
+     ('2011-09-01', '2011-09-01'),
+     ('2011-09-01', '2012-01-01'),
+
+     ('2011-11-01', '2011-11-01'),
+     ('2011-11-01', '2012-03-01'),
+
+     ('2012-01-01', '2012-01-01'),
+     ('2012-01-01', '2012-05-01'),
+
+     ('2012-03-01', '2012-03-01'),
+     ('2012-03-01', '2012-07-01'),
+
+     ('2012-05-01', '2012-05-01'),
+     ('2012-05-01', '2012-09-01'),
+
+     ('2012-07-01', '2012-07-01'),
+     ('2012-07-01', '2012-11-01'),
+
+     ('2012-09-01', '2012-09-01'),
+     ('2012-09-01', '2013-01-01')
+     ]
+
+    date_list = ['2011-03-01', '2011-05-01', '2011-07-01', '2011-09-01', '2011-11-01', '2012-01-01', '2012-03-01', '2012-05-01', '2012-07-01', '2012-09-01', '2012-11-01', '2013-01-01']
+    
+    for dp_idx in range(10):
+        date_pairs = [ date_pairs_all[2*dp_idx], date_pairs_all[2*dp_idx+1] ]
+        print(date_pairs)
+        params = {}
+        params['pg_role'] = config["user"]
+        params['schema'] = 'bias_working'
+        experiment_hashes = ['a33cbdb3208b0df5f4286237a6dbcf8f']
+        params['experiment_hashes'] = experiment_hashes
+        if isinstance(date_pairs[0], str):
+            date_pairs = [date_pairs]
+        params['date_pairs'] = date_pairs
+        params['date_list'] = date_list
+        params['weights'] = weights
+        params['list_sizes'] = [1000]
+        params['demo_col'] = 'plevel'
+        params['subsample'] = False
+        params['bootstrap'] = False
+        params['entity_demos']='bias_working.entity_demos'
 
 
+        engine=engine_donors
+        ra = RecallAdjuster(engine=engine, params=params, pause_phases=pause_phases, exhaustive=exhaustive)
+        
+        if not exhaustive:
+            engine_donors.execute("""
+                INSERT INTO bias_results.model_adjustment_results_plevel 
+                SELECT * FROM bias_working.model_adjustment_results_plevel;
+            """)
 
-    if not entity_selection:    
-        engine_donors.execute(f'TRUNCATE TABLE {results_schema}.model_adjustment_results_{demo_col};')
-        engine_donors.execute(f'TRUNCATE TABLE {working_schema}.model_adjustment_group_k_{demo_col};')
-        if exhaustive:
+            engine_donors.execute("""
+                INSERT INTO bias_results.composite_results_plevel 
+                SELECT * FROM bias_working.composite_results_plevel;
+            """)
+
+            engine_donors.execute("""
+                INSERT INTO bias_results.model_adjustment_group_k_plevel 
+                SELECT * FROM bias_working.model_adjustment_group_k_plevel gkp WHERE (gkp.model_group_id, gkp.train_end_time, gkp.demo_value, gkp.group_k) NOT IN (SELECT * FROM bias_results.model_adjustment_group_k_plevel)
+            """)
+
+            engine_donors.execute("""
+                INSERT INTO bias_results.model_multi_adjustment_results_plevel
+                SELECT * FROM bias_working.model_multi_adjustment_results_plevel;
+            """)
+        else:
             for al in string.ascii_lowercase[:10]:
-                engine_donors.execute(f'TRUNCATE TABLE {results_schema}.exhaustive_{al};')
-
-        engine_donors.execute('COMMIT;')
-
-
-        for dp_idx in range(0, len(date_pairs_all), 2):
-            date_pairs = [ date_pairs_all[dp_idx], date_pairs_all[dp_idx+1] ]
-            print(date_pairs)
-            params = common_params.copy()
-            if isinstance(date_pairs[0], str):
-                date_pairs = [date_pairs]
-            params['date_pairs'] = date_pairs
-            params['weights'] = weights
-
-
-            engine=engine_donors
-            ra = RecallAdjuster(engine=engine, params=params, pause_phases=pause_phases, exhaustive=exhaustive, small_model_selection=small_model_selection)
-
-            if not exhaustive:
                 engine_donors.execute(f"""
-                    INSERT INTO {results_schema}.model_adjustment_results_{demo_col} 
-                    SELECT * FROM {working_schema}.model_adjustment_results_{demo_col};
+                    INSERT INTO bias_results.exhaustive_{al} 
+                    SELECT * FROM bias_working.exhaustive_{al};
                 """)
 
-                engine_donors.execute(f"""
-                    INSERT INTO {results_schema}.model_adjustment_group_k_{demo_col} 
-                    SELECT * FROM {working_schema}.model_adjustment_group_k_{demo_col} gkp WHERE (gkp.model_group_id, gkp.train_end_time, gkp.demo_value, gkp.group_k) NOT IN (SELECT * FROM {results_schema}.model_adjustment_group_k_{demo_col})
-                """)
-
-            else:
-                for al in string.ascii_lowercase[:10]:
-                    engine_donors.execute(f"""
-                        INSERT INTO {results_schema}.exhaustive_{al} 
-                        SELECT * FROM {working_schema}.exhaustive_{al};
-                    """)
-
-            engine_donors.execute("COMMIT;")
-
-        for save_name in alternate_save_names:
-            schema = params['schema'] 
-            demo_col = params["demo_col"]
-            sql = f"DROP TABLE IF EXISTS {results_schema}.{save_name}; CREATE TABLE {results_schema}.{save_name} AS SELECT * FROM {results_schema}.model_adjustment_results_{demo_col};"
-            engine_donors.execute(sql)
-            engine_donors.execute("COMMIT;")
+        engine_donors.execute("COMMIT;")
             
-        if not small_model_selection:
-            engine_donors.execute(f'DROP TABLE IF EXISTS {working_schema}.saved_model_adjustment_results_{demo_col};')
-            engine_donors.execute(f'CREATE TABLE {working_schema}.saved_model_adjustment_results_{demo_col} AS SELECT * FROM {results_schema}.model_adjustment_results_{demo_col}')
-            engine_donors.execute('COMMIT;')
-    
-    else:
-        ws = [0.99, 0.9, 0.8, 0.7, 0.6, 0.5, 0.4, 0.3, 0.2, 0.1, 0.01]
-
-        for w in ws:
-            weights = [w, 1-w]
-            print(w)
-            engine_donors.execute(f'TRUNCATE TABLE {working_schema}.model_adjustment_group_k_{demo_col};')
-            engine_donors.execute('COMMIT;')
-            for dp_idx in range(0, len(date_pairs_all), 2):
-                date_pairs = [ date_pairs_all[dp_idx], date_pairs_all[dp_idx+1] ]
-                print(date_pairs)
-                params = common_params.copy()
-                if isinstance(date_pairs[0], str):
-                    date_pairs = [date_pairs]
-                params['date_pairs'] = date_pairs
-                params['weights'] = weights
-
-
-                engine=engine_donors
-                if weights[0] == 0.99:
-                    engine_donors.execute(f"DROP TABLE IF EXISTS {results_schema}.selected_entities")
-                    engine_donors.execute("COMMIT")
-                ra = RecallAdjuster(engine=engine, params=params, pause_phases=pause_phases, small_model_selection=True, entity_selection=True)
-
-                if weights[0] == 0.99:
-                    engine_donors.execute(f"""
-                                CREATE TABLE {results_schema}.selected_entities AS
-                                SELECT *, {weights[0]} as weight FROM {working_schema}.tmp_selected_entities;
-                            """)
-                else:
-                    engine_donors.execute(f"""
-                            INSERT INTO {results_schema}.selected_entities 
-                            SELECT *, {weights[0]} as weight FROM {working_schema}.tmp_selected_entities;
-                        """)
-                engine_donors.execute("COMMIT")
-
-
+    for save_name in alternate_save_names:
+        schema = params['schema'] 
+        demo_col = params["demo_col"]
+        sql = f"DROP TABLE IF EXISTS bias_results.{save_name}; CREATE TABLE bias_results.{save_name} AS SELECT * FROM bias_results.model_adjustment_results_{demo_col};"
+        engine_donors.execute(sql)
+        engine_donors.execute("COMMIT;")
         
-def multi_weight_ra_procedure(small_model_selection=False):
+        
+def entity_analysis_single( engine_donors, config, weights=[0.99, 0.01], pause_phases=False):
+    engine_donors.execute('TRUNCATE TABLE bias_working.model_adjustment_group_k_plevel;')
+    engine_donors.execute('COMMIT;')
+    date_pairs_all = [
+     ('2011-03-01', '2011-03-01'),
+     ('2011-03-01', '2011-07-01'),
+
+     ('2011-05-01', '2011-05-01'),
+     ('2011-05-01', '2011-09-01'),   
+
+     ('2011-07-01', '2011-07-01'),
+     ('2011-07-01', '2011-11-01'),
+
+     ('2011-09-01', '2011-09-01'),
+     ('2011-09-01', '2012-01-01'),
+
+     ('2011-11-01', '2011-11-01'),
+     ('2011-11-01', '2012-03-01'),
+
+     ('2012-01-01', '2012-01-01'),
+     ('2012-01-01', '2012-05-01'),
+
+     ('2012-03-01', '2012-03-01'),
+     ('2012-03-01', '2012-07-01'),
+
+     ('2012-05-01', '2012-05-01'),
+     ('2012-05-01', '2012-09-01'),
+
+     ('2012-07-01', '2012-07-01'),
+     ('2012-07-01', '2012-11-01'),
+
+     ('2012-09-01', '2012-09-01'),
+     ('2012-09-01', '2013-01-01')
+     ]
+
+    date_list = ['2011-03-01', '2011-05-01', '2011-07-01', '2011-09-01', '2011-11-01', '2012-01-01', '2012-03-01', '2012-05-01', '2012-07-01', '2012-09-01', '2012-11-01', '2013-01-01']
+    
+    for dp_idx in range(10):
+        date_pairs = [ date_pairs_all[2*dp_idx], date_pairs_all[2*dp_idx+1] ]
+        print(date_pairs)
+        params = {}
+        params['pg_role'] = config["user"]
+        params['schema'] = 'bias_working'
+        experiment_hashes = ['a33cbdb3208b0df5f4286237a6dbcf8f']
+        params['experiment_hashes'] = experiment_hashes
+        if isinstance(date_pairs[0], str):
+            date_pairs = [date_pairs]
+        params['date_pairs'] = date_pairs
+        params['date_list'] = date_list
+        params['weights'] = weights
+        params['list_sizes'] = [1000]
+        params['demo_col'] = 'plevel'
+        params['subsample'] = False
+        params['bootstrap'] = False
+        params['entity_demos']='bias_working.entity_demos'
+
+
+        engine=engine_donors
+        ra = RecallAdjuster(engine=engine, params=params, pause_phases=pause_phases, entity_analysis=True)
+        if weights[0] == 0.99:
+            engine_donors.execute(f"DROP TABLE IF EXISTS bias_results.selected_entities")
+            engine_donors.execute("COMMIT")
+            engine_donors.execute(f"""
+                    CREATE TABLE bias_results.selected_entities AS
+                    SELECT *, {weights[0]} as weight FROM bias_working.tmp_selected_entities;
+                """)
+        else:
+            engine_donors.execute(f"""
+                    INSERT INTO bias_results.selected_entities 
+                    SELECT *, {weights[0]} as weight FROM bias_working.tmp_selected_entities;
+                """)
+        engine_donors.execute("COMMIT")
+        
+def entity_analysis_procedure(engine_donors=None, config=None, pause_phases=False):
+    if engine_donors is None or config is None:
+        with open('db_profile.yaml') as fd:
+            config = yaml.full_load(fd)
+            dburl = sqlalchemy.engine.url.URL.create(
+                "postgresql",
+                host=config["host"],
+                username=config["user"],
+                database=config["db"],
+                password=config["pass"],
+                port=config["port"],
+            )
+            engine_donors = sqlalchemy.create_engine(dburl, poolclass=sqlalchemy.pool.QueuePool)
+        
+    engine_donors.execute('TRUNCATE TABLE bias_working.model_adjustment_results_plevel;')
+    engine_donors.execute('INSERT INTO bias_working.model_adjustment_results_plevel SELECT * FROM bias_results.model_adjustment_results_plevel')
+    engine_donors.execute('COMMIT;')
+    ws = [0.99, 0.9, 0.8, 0.7, 0.6, 0.5, 0.4, 0.3, 0.2, 0.1, 0.01]
+    for w in ws:
+        weights = [w, 1-w]
+        print(w)
+        entity_analysis_single(engine_donors, config, weights=weights, pause_phases=pause_phases)
+    
+        
+def multi_weight_education_ra_procedure():
     w = 0.99
     print(f"Procedure with weights: {w}")
-    ra_procedure(weights=[w, 1-w], alternate_save_names=["save_res_a"], small_model_selection=small_model_selection)
+    education_ra_procedure(weights=[w, 1-w], alternate_save_names=["save_res_a"])
     w = 0.9
     print(f"Procedure with weights: {w}")
-    ra_procedure(weights=[w, 1-w], alternate_save_names=["save_res_b"], small_model_selection=small_model_selection)
+    education_ra_procedure(weights=[w, 1-w], alternate_save_names=["save_res_b"])
     w = 0.8
     print(f"Procedure with weights: {w}")    
-    ra_procedure(weights=[w, 1-w], alternate_save_names=["save_res_c"], small_model_selection=small_model_selection)
+    education_ra_procedure(weights=[w, 1-w], alternate_save_names=["save_res_c"])
     w = 0.7
     print(f"Procedure with weights: {w}")
-    ra_procedure(weights=[w, 1-w], alternate_save_names=["save_res_d"], small_model_selection=small_model_selection)
+    education_ra_procedure(weights=[w, 1-w], alternate_save_names=["save_res_d"])
     w = 0.6
     print(f"Procedure with weights: {w}")
-    ra_procedure(weights=[w, 1-w], alternate_save_names=["save_res_e"], small_model_selection=small_model_selection)
+    education_ra_procedure(weights=[w, 1-w], alternate_save_names=["save_res_e"])
     w = 0.5
     print(f"Procedure with weights: {w}")
-    ra_procedure(weights=[w, 1-w], alternate_save_names=["save_res_f"], small_model_selection=small_model_selection)
+    education_ra_procedure(weights=[w, 1-w], alternate_save_names=["save_res_f"])
     w = 0.4
     print(f"Procedure with weights: {w}")
-    ra_procedure(weights=[w, 1-w], alternate_save_names=["save_res_g"], small_model_selection=small_model_selection)
+    education_ra_procedure(weights=[w, 1-w], alternate_save_names=["save_res_g"])
     w = 0.3
     print(f"Procedure with weights: {w}")
-    ra_procedure(weights=[w, 1-w], alternate_save_names=["save_res_h"], small_model_selection=small_model_selection)
+    education_ra_procedure(weights=[w, 1-w], alternate_save_names=["save_res_h"])
     w = 0.2
     print(f"Procedure with weights: {w}")
-    ra_procedure(weights=[w, 1-w], alternate_save_names=["save_res_i"], small_model_selection=small_model_selection)
+    education_ra_procedure(weights=[w, 1-w], alternate_save_names=["save_res_i"])
     w = 0.1
     print(f"Procedure with weights: {w}")
-    ra_procedure(weights=[w, 1-w], alternate_save_names=["save_res_j"], small_model_selection=small_model_selection)
+    education_ra_procedure(weights=[w, 1-w], alternate_save_names=["save_res_j"])
     w = 0.01
     print(f"Procedure with weights: {w}")
-    ra_procedure(weights=[w, 1-w], alternate_save_names=["save_res_k"], small_model_selection=small_model_selection)
-
+    education_ra_procedure(weights=[w, 1-w], alternate_save_names=["save_res_k"])
     
         
 
 if __name__ == "__main__":
-    ra_procedure(weights=[1, 0], entity_selection=False)
+    multi_weight_education_ra_procedure()
+    #entity_analysis_procedure(pause_phases=False)
+    

@@ -23,22 +23,6 @@ except (ImportError, RuntimeError) as e:
     pass
 
 
-ENTITY_DEMO_FILES = {
-    'joco': {
-        'sql_tmpl': 'joco_entity_demos.sql.tmpl',
-        'check_sql': """
-            WITH all_matches AS (
-                SELECT COUNT(DISTINCT ((mg.model_config->'matchdatetime')::VARCHAR)::TIMESTAMP) AS num_match
-                FROM tmp_bias_models
-                JOIN model_metadata.model_groups mg USING(model_group_id)
-            )
-            SELECT num_match = 1 AS pass_check
-            FROM all_matches
-        """
-        }
-}
-
-
 
 class RecallAdjuster(object):
     def __init__(
@@ -46,7 +30,9 @@ class RecallAdjuster(object):
         engine,
         params,
         pause_phases=False, 
-        exhaustive=False):
+        exhaustive=False, 
+        small_model_selection=False, 
+        entity_selection=False):
         """
         Arguments:
             engine: 
@@ -95,6 +81,10 @@ class RecallAdjuster(object):
                 True if you want a break after each phase requiring user input to continue
             exhaustive:
                 Runs bias adjustment with group_k +- 50 on both sides to measure stability of results to adjustment thresholds
+            small_model_selection:
+                True if you want to use the model_adjustment_results_{demo_col} table to select only the best models for the next step of recall adjustment. 
+            entity_selection:
+                Runs entity selection instead of recall adjustment
         """
 
         # store parameters
@@ -110,7 +100,12 @@ class RecallAdjuster(object):
         self.validate_dates()
 
         # create a few temporary tables we'll need for calculations
-        sql = Template(open('recall_adjustment_verbose_pre.sql.tmpl', 'r').read()).render(**self.params)
+        if small_model_selection:
+            pre_file = "quick_adjustment_pre.sql.tmpl"
+        else:
+            pre_file = "recall_adjustment_verbose_pre.sql.tmpl"
+        
+        sql = Template(open(pre_file, 'r').read()).render(**self.params)
         self.engine.execute(sql)
         self.engine.execute("COMMIT")
         
@@ -120,10 +115,8 @@ class RecallAdjuster(object):
         entity_demos = self.params['entity_demos']
         if entity_demos.find('.') > -1:
             self.params['entity_demos'] = entity_demos
-        elif entity_demos in ENTITY_DEMO_FILES.keys():
-            self.params['entity_demos'] = self.create_entity_demos(entity_demos)
         else:
-            raise ValueError('Error: entity_demos must be either `schema.table_name` OR one of (%s)' % ', '.join(ENTITY_DEMO_FILES.keys()))
+            raise ValueError('Error: entity_demos must be either `schema.table_name`')
 
         # calculate demo values for general use, ordered by frequency
         sql = "SELECT %s, COUNT(*) AS num FROM %s GROUP BY 1 ORDER BY 2 DESC" % (self.params['demo_col'], self.params['entity_demos'])
@@ -133,10 +126,12 @@ class RecallAdjuster(object):
         
 
         # pre-calculate the results for all models, date pairs
-        if not exhaustive:
-            sql = Template(open('recall_adjustment_verbose.sql.tmpl', 'r').read()).render(**self.params)
-        else:
-            sql = Template(open('recall_adjustment_exhaustive.sql.tmpl', 'r').read()).render(**self.params)
+        adjustment_file = 'recall_adjustment_verbose.sql.tmpl'
+        if exhaustive:
+            adjustment_file = "recall_adjustment_exhaustive.sql.tmpl"
+        if entity_selection:
+            adjustment_file = "entity_selection.sql.tmpl"
+        sql = Template(open(adjustment_file, 'r').read()).render(**self.params)
         self.engine.execute(sql)
         self.engine.execute("COMMIT")
         
@@ -216,58 +211,6 @@ class RecallAdjuster(object):
                 if dateparser.parse(past) > dateparser.parse(future):
                     raise ValueError('Error! Cannot validate on the past. %s should be no earlier than %s.' % (future, past))
 
-
-    def do_bootstrap(self):
-        # FIXME: Right now bootstrap sampling relies on duplicate entity_id values in tmp_bias_sample
-        #        not creating downstream issues. This should be true currently, but is a bit of a
-        #        risky assumption should someone change downstream code to either de-dupe on entity
-        #        or potentially introduce dupes elsewhere that could result in a many-to-many join...
-        self.engine.execute("DROP TABLE IF EXISTS tmp_bias_sample;")
-        self.engine.execute("""
-            CREATE LOCAL TEMPORARY TABLE tmp_bias_sample (
-                    entity_id INT,
-                    as_of_date DATE
-                ) ON COMMIT PRESERVE ROWS;
-            """)
-        self.engine.execute("COMMIT;")
-
-        # gross nested for loop that could probably be done away with, but sizes should be pretty small, so meh...
-        for as_of_date in set([dt for dt_pair in self.params['date_pairs'] for dt in dt_pair]):
-            tot_size = self.engine.execute("SELECT COUNT(DISTINCT entity_id) FROM %s WHERE as_of_date='%s'::DATE" % (self.params['entity_demos'], as_of_date)).fetchall()[0][0]
-            for demo_value, demo_frac in self.params['bootstrap_weights'].items():
-                demo_size = round(tot_size*demo_frac)
-                all_entities = self.engine.execute("""
-                    SELECT DISTINCT entity_id
-                    FROM {entity_demos}
-                    WHERE {demo_col} = '{demo_value}'
-                        AND as_of_date = '{as_of_date}'::DATE
-                    ;
-                    """.format(
-                        entity_demos=self.params['entity_demos'], 
-                        demo_col=self.params['demo_col'],
-                        demo_value=demo_value,
-                        as_of_date=as_of_date
-                        ))
-                all_entities = np.array([row[0] for row in all_entities])
-                bs_entities = np.random.choice(all_entities, size=demo_size, replace=True)
-                bs_entities = np.array([[e, as_of_date] for e in bs_entities])
-                pg_copy_to_table(bs_entities, 'tmp_bias_sample', self.engine, columns=['entity_id', 'as_of_date'], fmt=('%s', '%s'))
-                self.engine.execute("COMMIT;")
-        self.engine.execute("CREATE INDEX ON tmp_bias_sample(entity_id, as_of_date);")
-
-
-    def create_entity_demos(self, entity_demos):
-        sql_file = ENTITY_DEMO_FILES[entity_demos]['sql_tmpl']
-        sql = Template(open(sql_file, 'r').read()).render(**self.params)
-        self.engine.execute(sql)
-        self.engine.execute("COMMIT")
-
-        # consistency check:
-        check_sql = ENTITY_DEMO_FILES[entity_demos]['check_sql']
-        if not self.engine.execute(check_sql).fetchall()[0][0]:
-            raise RuntimeError('Entity Demos failed consistency check:\n %s' % check_sql)
-
-        return '%s.entity_demos' % self.params['schema']
 
 
     def plot(
@@ -428,7 +371,7 @@ class RecallAdjuster(object):
         return {recall_ratio: ax}
 
     
-def ra_procedure(weights=[0.99, 0.01], demo_col="ovg", working_schema="bias_analysis_temp", results_schema="bias_analysis", list_size=1000, alternate_save_names=[], engine_donors=None, config=None, pause_phases=False, exhaustive=False):
+def ra_procedure(weights=[0.99, 0.01], demo_col="ovg", working_schema="bias_analysis_temp", results_schema="bias_analysis", list_size=1000, alternate_save_names=[], engine_donors=None, config=None, pause_phases=False, exhaustive=False, small_model_selection=False, entity_selection=False):
     if engine_donors is None or config is None:
         with open('../../config/db_default_profile.yaml') as fd:
             config = yaml.full_load(fd)
@@ -444,71 +387,104 @@ def ra_procedure(weights=[0.99, 0.01], demo_col="ovg", working_schema="bias_anal
         
 
     
-    engine_donors.execute(f'TRUNCATE TABLE {results_schema}.model_adjustment_results_{demo_col};')
-    engine_donors.execute(f'TRUNCATE TABLE {working_schema}.model_adjustment_group_k_{demo_col};')
-    if exhaustive:
-        for al in string.ascii_lowercase[:10]:
-            engine_donors.execute(f'TRUNCATE TABLE {results_schema}.exhaustive_{al};')
-        
-    engine_donors.execute('COMMIT;')
-    
-    
     date_list = ["2010-01-01", "2011-01-01", "2012-01-01", "2013-01-01", "2014-01-01", "2015-01-01", "2016-01-01"]
     date_pairs_all = []
     for i, d in enumerate(date_list[:-1]):
         date_pairs_all.append((date_list[i], date_list[i]))
         date_pairs_all.append((date_list[i], date_list[i+1]))
 
+    common_params = {"pg_role": config["user"], "schema": working_schema, "experiment_hashes": ['4de54db8346981b0bde4947c672437d7'], 'demo_col': demo_col, "subsample": False, "bootstrap": False, "entity_demos":f'{working_schema}.entity_demos', "list_sizes": [list_size], "date_list": date_list}
 
-    for dp_idx in range(0, len(date_pairs_all), 2):
-        date_pairs = [ date_pairs_all[dp_idx], date_pairs_all[dp_idx+1] ]
-        print(date_pairs)
-        params = {}
-        params['pg_role'] = config["user"]
-        params['schema'] = working_schema
-        experiment_hashes = ['4de54db8346981b0bde4947c672437d7']
-        params['experiment_hashes'] = experiment_hashes
-        if isinstance(date_pairs[0], str):
-            date_pairs = [date_pairs]
-        params['date_pairs'] = date_pairs
-        params['date_list'] = date_list
-        params['weights'] = weights
-        params['list_sizes'] = [list_size]
-        params['demo_col'] = demo_col
-        params['subsample'] = False
-        params['bootstrap'] = False
-        params['entity_demos']=f'{working_schema}.entity_demos'
-
-
-        engine=engine_donors
-        ra = RecallAdjuster(engine=engine, params=params, pause_phases=pause_phases, exhaustive=exhaustive)
-        
-        if not exhaustive:
-            engine_donors.execute(f"""
-                INSERT INTO {results_schema}.model_adjustment_results_{demo_col} 
-                SELECT * FROM {working_schema}.model_adjustment_results_{demo_col};
-            """)
-
-            engine_donors.execute(f"""
-                INSERT INTO {results_schema}.model_adjustment_group_k_{demo_col} 
-                SELECT * FROM {working_schema}.model_adjustment_group_k_{demo_col} gkp WHERE (gkp.model_group_id, gkp.train_end_time, gkp.demo_value, gkp.group_k) NOT IN (SELECT * FROM {results_schema}.model_adjustment_group_k_{demo_col})
-            """)
-
-        else:
+    if not entity_selection:    
+        engine_donors.execute(f'TRUNCATE TABLE {results_schema}.model_adjustment_results_{demo_col};')
+        engine_donors.execute(f'TRUNCATE TABLE {working_schema}.model_adjustment_group_k_{demo_col};')
+        if exhaustive:
             for al in string.ascii_lowercase[:10]:
+                engine_donors.execute(f'TRUNCATE TABLE {results_schema}.exhaustive_{al};')
+
+        engine_donors.execute('COMMIT;')
+
+
+        for dp_idx in range(0, len(date_pairs_all), 2):
+            date_pairs = [ date_pairs_all[dp_idx], date_pairs_all[dp_idx+1] ]
+            print(date_pairs)
+            params = common_params.copy()
+            if isinstance(date_pairs[0], str):
+                date_pairs = [date_pairs]
+            params['date_pairs'] = date_pairs
+            params['weights'] = weights
+
+
+            engine=engine_donors
+            ra = RecallAdjuster(engine=engine, params=params, pause_phases=pause_phases, exhaustive=exhaustive, small_model_selection=small_model_selection)
+
+            if not exhaustive:
                 engine_donors.execute(f"""
-                    INSERT INTO {results_schema}.exhaustive_{al} 
-                    SELECT * FROM {working_schema}.exhaustive_{al};
+                    INSERT INTO {results_schema}.model_adjustment_results_{demo_col} 
+                    SELECT * FROM {working_schema}.model_adjustment_results_{demo_col};
                 """)
 
-        engine_donors.execute("COMMIT;")
+                engine_donors.execute(f"""
+                    INSERT INTO {results_schema}.model_adjustment_group_k_{demo_col} 
+                    SELECT * FROM {working_schema}.model_adjustment_group_k_{demo_col} gkp WHERE (gkp.model_group_id, gkp.train_end_time, gkp.demo_value, gkp.group_k) NOT IN (SELECT * FROM {results_schema}.model_adjustment_group_k_{demo_col})
+                """)
+
+            else:
+                for al in string.ascii_lowercase[:10]:
+                    engine_donors.execute(f"""
+                        INSERT INTO {results_schema}.exhaustive_{al} 
+                        SELECT * FROM {working_schema}.exhaustive_{al};
+                    """)
+
+            engine_donors.execute("COMMIT;")
+
+        for save_name in alternate_save_names:
+            schema = params['schema'] 
+            demo_col = params["demo_col"]
+            sql = f"DROP TABLE IF EXISTS {results_schema}.{save_name}; CREATE TABLE {results_schema}.{save_name} AS SELECT * FROM {results_schema}.model_adjustment_results_{demo_col};"
+            engine_donors.execute(sql)
+            engine_donors.execute("COMMIT;")
             
-    for save_name in alternate_save_names:
-        schema = params['schema'] 
-        demo_col = params["demo_col"]
-        sql = f"DROP TABLE IF EXISTS {results_schema}.{save_name}; CREATE TABLE {results_schema}.{save_name} AS SELECT * FROM {results_schema}.model_adjustment_results_{demo_col};"
-        engine_donors.execute(sql)
-        engine_donors.execute("COMMIT;")
+            
+        if not small_model_selection:
+            engine_donors.execute(f'DROP TABLE IF EXISTS {working_schema}.saved_model_adjustment_results_{demo_col};')
+            engine_donors.execute(f'CREATE TABLE {working_schema}.saved_model_adjustment_results_{demo_col} AS SELECT * FROM {results_schema}.model_adjustment_results_{demo_col}')
+            engine_donors.execute('COMMIT;')
+    
+    else:
+        ws = [0.99, 0.9, 0.8, 0.7, 0.6, 0.5, 0.4, 0.3, 0.2, 0.1, 0.01]
+        for w in ws:
+            weights = [w, 1-w]
+            print(w)
+            engine_donors.execute(f'TRUNCATE TABLE {working_schema}.model_adjustment_group_k_{demo_col};')
+            engine_donors.execute('COMMIT;')
+            for dp_idx in range(0, len(date_pairs_all), 2):
+                date_pairs = [ date_pairs_all[dp_idx], date_pairs_all[dp_idx+1] ]
+                print(date_pairs)
+                params = common_params.copy()
+                if isinstance(date_pairs[0], str):
+                    date_pairs = [date_pairs]
+                params['date_pairs'] = date_pairs
+                params['weights'] = weights
+
+
+                engine=engine_donors
+                if weights[0] == 0.99:
+                    engine_donors.execute(f"DROP TABLE IF EXISTS {results_schema}.selected_entities")
+                    engine_donors.execute("COMMIT")
+                ra = RecallAdjuster(engine=engine, params=params, pause_phases=pause_phases, small_model_selection=True, entity_selection=True)
+
+                if weights[0] == 0.99:
+                    engine_donors.execute(f"""
+                                CREATE TABLE {results_schema}.selected_entities AS
+                                SELECT *, {weights[0]} as weight FROM {working_schema}.tmp_selected_entities;
+                            """)
+                else:
+                    engine_donors.execute(f"""
+                            INSERT INTO {results_schema}.selected_entities 
+                            SELECT *, {weights[0]} as weight FROM {working_schema}.tmp_selected_entities;
+                        """)
+                engine_donors.execute("COMMIT")
 
         
 def multi_weight_ra_procedure():
@@ -549,5 +525,5 @@ def multi_weight_ra_procedure():
         
 
 if __name__ == "__main__":
-    multi_weight_ra_procedure()
+    ra_procedure(weights[1, 0])
     
