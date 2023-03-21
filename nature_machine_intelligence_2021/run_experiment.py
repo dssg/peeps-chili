@@ -20,8 +20,8 @@ fh.setFormatter(formatter)
 logger.addHandler(fh)
 
 
-database = None
-project_path = None
+database = "dhananja_donors"
+project_path = ""
 
 
 # creating database engine
