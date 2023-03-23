@@ -129,6 +129,7 @@ class RecallAdjuster(object):
         adjustment_file = 'recall_adjustment_verbose.sql.tmpl'
         if exhaustive:
             adjustment_file = "recall_adjustment_exhaustive.sql.tmpl"
+            self.params['exhaustive_list'] = self.get_exhaustive_list()
         if entity_selection:
             adjustment_file = "entity_selection.sql.tmpl"
         sql = Template(open(adjustment_file, 'r').read()).render(**self.params)
@@ -193,6 +194,23 @@ class RecallAdjuster(object):
                     s += f" WHEN future_train_end_time = '{future_train_end_time}' AND train_end_time = '{train_end_time}' THEN {w} "
         s += "ELSE 0 END"
         return s
+    
+    def get_exhaustive_list(self):
+        demo_values = self.params['demo_values']
+        assert len(demo_values) == 2 # For now we will only do this with the even case
+        low_num = self.params.get('exhaustive_low_frac', 0.25)
+        high_num = self.params.get('exhaustive_high_frac', 0.75)
+        n_steps = self.params.get('exhaustive_n_steps', 15)
+        fracs = np.linspace(low_num, high_num, n_steps)
+        d = []
+        for i, frac in enumerate(fracs):
+            case_str = f"CASE WHEN demo_value='{demo_values[0]}' then (list_size * {frac})::INT else (list_size * (1-{frac}))::INT END AS group_k"
+            d.append((i, case_str))
+        return d
+            
+        
+        
+        
 
     
     def ensure_all_demos(self, check_demos):
@@ -371,7 +389,7 @@ class RecallAdjuster(object):
         return {recall_ratio: ax}
 
     
-def ra_procedure(weights=[0.99, 0.01], demo_col="plevel", working_schema="bias_working", results_schema="bias_results", list_size=1000, alternate_save_names=[], engine_donors=None, config=None, pause_phases=False, exhaustive=False, small_model_selection=False, entity_selection=False):
+def ra_procedure(weights=[0.99, 0.01], demo_col="plevel", working_schema="bias_working", results_schema="bias_results", list_size=1000, exhaustive_n_steps=15, alternate_save_names=[], engine_donors=None, config=None, pause_phases=False, exhaustive=False, small_model_selection=False, entity_selection=False):
     if engine_donors is None or config is None:
         with open('../../config/db_default_profile.yaml') as fd:
             config = yaml.full_load(fd)
@@ -421,14 +439,16 @@ def ra_procedure(weights=[0.99, 0.01], demo_col="plevel", working_schema="bias_w
 
     date_list = ['2011-03-01', '2011-05-01', '2011-07-01', '2011-09-01', '2011-11-01', '2012-01-01', '2012-03-01', '2012-05-01', '2012-07-01', '2012-09-01', '2012-11-01', '2013-01-01']
 
-    common_params = {"pg_role": config["user"], "schema": working_schema, "experiment_hashes": ['a33cbdb3208b0df5f4286237a6dbcf8f'], 'demo_col': demo_col, "subsample": False, "bootstrap": False, "entity_demos":f'{working_schema}.entity_demos', "list_sizes": [list_size], "date_list": date_list, "min_separations": 2}
+    common_params = {"pg_role": config["user"], "schema": working_schema, "experiment_hashes": ['a33cbdb3208b0df5f4286237a6dbcf8f'], 'demo_col': demo_col, "subsample": False, "bootstrap": False, "entity_demos":f'{working_schema}.entity_demos', "list_sizes": [list_size], "date_list": date_list, "min_separations": 2, "exhaustive_n_steps": exhaustive_n_steps}
 
     if not entity_selection:    
         engine_donors.execute(f'TRUNCATE TABLE {results_schema}.model_adjustment_results_{demo_col};')
         engine_donors.execute(f'TRUNCATE TABLE {working_schema}.model_adjustment_group_k_{demo_col};')
         if exhaustive:
-            for al in string.ascii_lowercase[:10]:
-                engine_donors.execute(f'TRUNCATE TABLE {results_schema}.exhaustive_{al};')
+            for index in range(exhaustive_n_steps):
+                engine_donors.execute(f"DROP TABLE IF EXISTS {results_schema}.exhaustive_{index};")
+                engine_donors.execute(f"CREATE TABLE {results_schema}.exhaustive_{index} AS SELECT * FROM {results_schema}.model_adjustment_results_{demo_col};")
+                engine_donors.execute(f'TRUNCATE TABLE {results_schema}.exhaustive_{index};')
 
         engine_donors.execute('COMMIT;')
 
@@ -445,22 +465,21 @@ def ra_procedure(weights=[0.99, 0.01], demo_col="plevel", working_schema="bias_w
             engine=engine_donors
             ra = RecallAdjuster(engine=engine, params=params, pause_phases=pause_phases, exhaustive=exhaustive, small_model_selection=small_model_selection)
 
-            if not exhaustive:
-                engine_donors.execute(f"""
-                    INSERT INTO {results_schema}.model_adjustment_results_{demo_col} 
-                    SELECT * FROM {working_schema}.model_adjustment_results_{demo_col};
-                """)
+            engine_donors.execute(f"""
+                INSERT INTO {results_schema}.model_adjustment_results_{demo_col} 
+                SELECT * FROM {working_schema}.model_adjustment_results_{demo_col};
+            """)
 
-                engine_donors.execute(f"""
-                    INSERT INTO {results_schema}.model_adjustment_group_k_{demo_col} 
-                    SELECT * FROM {working_schema}.model_adjustment_group_k_{demo_col} gkp WHERE (gkp.model_group_id, gkp.train_end_time, gkp.demo_value, gkp.group_k) NOT IN (SELECT * FROM {results_schema}.model_adjustment_group_k_{demo_col})
-                """)
+            engine_donors.execute(f"""
+                INSERT INTO {results_schema}.model_adjustment_group_k_{demo_col} 
+                SELECT * FROM {working_schema}.model_adjustment_group_k_{demo_col} gkp WHERE (gkp.model_group_id, gkp.train_end_time, gkp.demo_value, gkp.group_k) NOT IN (SELECT * FROM {results_schema}.model_adjustment_group_k_{demo_col})
+            """)
 
-            else:
-                for al in string.ascii_lowercase[:10]:
+            if exhaustive:
+                for index in range(exhaustive_n_steps):
                     engine_donors.execute(f"""
-                        INSERT INTO {results_schema}.exhaustive_{al} 
-                        SELECT * FROM {working_schema}.exhaustive_{al};
+                        INSERT INTO {results_schema}.exhaustive_{index} 
+                        SELECT * FROM {working_schema}.exhaustive_{index};
                     """)
 
             engine_donors.execute("COMMIT;")
