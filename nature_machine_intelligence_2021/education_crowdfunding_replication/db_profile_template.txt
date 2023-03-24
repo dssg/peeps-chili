@@ -1,6 +1,0 @@
-# fill in the details for your server and rename this file to db_profile.yaml
-host:
-user: 
-db: 
-pass: 
-port:

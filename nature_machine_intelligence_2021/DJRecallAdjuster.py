@@ -23,21 +23,6 @@ except (ImportError, RuntimeError) as e:
     pass
 
 
-ENTITY_DEMO_FILES = {
-    'joco': {
-        'sql_tmpl': 'joco_entity_demos.sql.tmpl',
-        'check_sql': """
-            WITH all_matches AS (
-                SELECT COUNT(DISTINCT ((mg.model_config->'matchdatetime')::VARCHAR)::TIMESTAMP) AS num_match
-                FROM tmp_bias_models
-                JOIN model_metadata.model_groups mg USING(model_group_id)
-            )
-            SELECT num_match = 1 AS pass_check
-            FROM all_matches
-        """
-        }
-}
-
 
 
 class RecallAdjuster(object):
@@ -110,6 +95,7 @@ class RecallAdjuster(object):
         self.params['date_weights'] = self.get_date_weights()
         self.params['date_weight_case_str'] = self.get_weight_case_str()
         self.params['date_weight_past_train_end_time_case_str'] = self.get_weight_past_train_end_time_case_str()
+        self.params['single_model_str'] = self.get_single_model_str()
         
 
         # check consistency of date pairs
@@ -117,9 +103,9 @@ class RecallAdjuster(object):
 
         # create a few temporary tables we'll need for calculations
         if small_model_selection:
-            pre_file = "quick_adjustment_pre.sql.tmpl"
+            pre_file = "general/quick_adjustment_pre.sql.tmpl"
         else:
-            pre_file = "recall_adjustment_verbose_pre.sql.tmpl"
+            pre_file = "general/recall_adjustment_pre.sql.tmpl"
         
         sql = Template(open(pre_file, 'r').read()).render(**self.params)
         self.engine.execute(sql)
@@ -142,11 +128,13 @@ class RecallAdjuster(object):
         
 
         # pre-calculate the results for all models, date pairs
-        adjustment_file = 'recall_adjustment_verbose.sql.tmpl'
+        self.params['tmp_rolling_recall_str'] = self.get_tmp_rolling_recall_str()        
+        adjustment_file = 'general/recall_adjustment_verbose.sql.tmpl'
         if exhaustive:
-            adjustment_file = "recall_adjustment_exhaustive.sql.tmpl"
+            adjustment_file = "general/recall_adjustment_exhaustive.sql.tmpl"
+            self.params['exhaustive_list'] = self.get_exhaustive_list()
         if entity_selection:
-            adjustment_file = "entity_selection.sql.tmpl"
+            adjustment_file = "general/entity_selection.sql.tmpl"
         sql = Template(open(adjustment_file, 'r').read()).render(**self.params)
         self.engine.execute(sql)
         self.engine.execute("COMMIT")
@@ -209,6 +197,36 @@ class RecallAdjuster(object):
                     s += f" WHEN future_train_end_time = '{future_train_end_time}' AND train_end_time = '{train_end_time}' THEN {w} "
         s += "ELSE 0 END"
         return s
+    
+    def get_exhaustive_list(self):
+        demo_values = self.params['demo_values']
+        assert len(demo_values) == 2 # For now we will only do this with the even case
+        low_num = self.params.get('exhaustive_low_frac', 0.25)
+        high_num = self.params.get('exhaustive_high_frac', 0.75)
+        n_steps = self.params.get('exhaustive_n_steps', 15)
+        fracs = np.linspace(low_num, high_num, n_steps)
+        d = []
+        for i, frac in enumerate(fracs):
+            case_str = f"CASE WHEN demo_value='{demo_values[0]}' then (list_size * {frac})::INT else (list_size * (1-{frac}))::INT END AS group_k"
+            d.append((i, case_str))
+        return d
+    
+    
+    def get_tmp_rolling_recall_str(self):
+        if self.params.get("coalesce", False):
+            s = "COUNT(*) OVER w_roll AS num_demo_rolling, GREATEST(COUNT(label_value) OVER w_roll, 1) AS num_label_demo_rolling, COALESCE(SUM(label_value) OVER w_roll, 0) AS tp_demo_rolling, 1.0000*(COALESCE(SUM(label_value) OVER w_roll, 0))/(SUM(label_value) OVER w_all) AS recall_demo_rolling"
+        else:
+            s = "COUNT(*) OVER w_roll AS num_demo_rolling, SUM(label_value) OVER w_roll AS tp_demo_rolling, 1.0000*(SUM(label_value) OVER w_roll)/(SUM(label_value) OVER w_all) AS recall_demo_rolling"
+        return s
+            
+    def get_single_model_str(self):
+        model = self.params.get("single_model", None)
+        if model is not None:
+            return f" AND m.model_group_id = {model}"
+        else:
+            return ""
+        
+        
 
     
     def ensure_all_demos(self, check_demos):
@@ -227,200 +245,71 @@ class RecallAdjuster(object):
                 if dateparser.parse(past) > dateparser.parse(future):
                     raise ValueError('Error! Cannot validate on the past. %s should be no earlier than %s.' % (future, past))
 
-
-
-    def plot(
-        self,
-        plot_type='shift',
-        recall_ratio='largest',
-        date_pair=None,
-        list_size=None,
-        metric='precision@',
-        ax=None
-        ):
-        """
-        Arguments:
-            plot_type:
-                One of `before`, `after`, `shift` (default)
-            recall_ratio:
-                May be `largest` (default) to plot against the largest recall ratio, `all_demos` to plot
-                all pairwise ratios across demo values, or `{demo1}_to_{demo2}` to plot a
-                spefic ratio between two given demo values
-            date_pair:
-                The tuple representing the past and future train_end_times to use for the plot
-                If not specified, the latest pair will be used
-            list_size:
-                The list size to use for plotting (If unspecified, the largest value will be used)
-            metric:
-                The metric for plotting, currently only 'precision@' is supported
-            ax:
-                Optionally pass an axes object for the plot to use
-        Returns:
-            ax_dict:
-                Dictionary mapping recall_ratio to the axis used by the plot, to allow further
-                modification of display parameters
-        """
-
-        # FIXME: remove print statements in favor of labels on the figures!
-
-        if date_pair is None:
-            date_pair = sorted(self.params['date_pairs'], key=lambda x: (x[1], x[0]), reverse=True)[0]
-
-        if list_size is None:
-            list_size = sorted(self.params['list_sizes'], reverse=True)[0]
-
-        if metric != 'precision@':
-            return ValueError("Currently `precision@` is the only supported metric!")
-
-        if recall_ratio == 'all_demos':
-            # just print these once...
-            print("Date Pair: %s" % str(date_pair))
-            print("List Size: %s" % list_size)
-            print("Metric: %s%s_abs" % (metric, list_size))
-
-            # TODO: Could probably make these a small multiples grid?
-            ax_dict = {}
-            # set up a figure for the plots
-            num_plots = len(self.params['demo_permutations'])
-            figsize = plt.rcParams['figure.figsize'].copy()
-            figsize[1] = figsize[1]*num_plots
-            _, ax = plt.subplots(num_plots, 1, sharex=False, sharey=False, figsize=figsize)
-
-            for i, (demo1, demo2) in enumerate(self.params['demo_permutations']):
-                recall_ratio = '%s_to_%s' % (demo1, demo2)
-                ax_dict.update(self.plot(plot_type, recall_ratio, date_pair, list_size, metric, ax=ax[i]))
-            plt.tight_layout(h_pad=1.1, w_pad=1.1)
-            return ax_dict
-
-        elif recall_ratio == 'largest':
-            plot_ratio = 'max_recall_ratio'
-            ylabel = 'largest recall ratio'
-
-        else:
-            plot_ratio = ('recall_%s' % recall_ratio).lower()
-            ylabel = 'recall ratio: %s' % recall_ratio.replace('_to_', '/')
-
-        if plot_type == 'shift':
-            plot_title = 'Equity and Efficiency Movement'
-        elif plot_type == 'after':
-            plot_title = 'Equity and Efficiency After Adjustment'
-        elif plot_type == 'before':
-            plot_title = 'Equity and Efficiency Before Adjustment'
-
-        if ax is not None:
-            plt.sca(ax)
-        else:
-            print("Date Pair: %s" % str(date_pair))
-            print("List Size: %s" % list_size)
-            print("Metric: %s%s_abs" % (metric, list_size))
-            _, ax = plt.subplots()
-
-        # subset the adjustment results dataframe to the current parameters
-        sub_df = self.adjustment_results.loc[
-            (self.adjustment_results['list_size'] == list_size)
-            &
-            (self.adjustment_results['metric'] == metric)
-            &
-            (self.adjustment_results['train_end_time'] == dateparser.parse(date_pair[1]))
-            &
-            (self.adjustment_results['past_train_end_time'] == dateparser.parse(date_pair[0]))
-        ,
-        ['base_value', 'base_%s' % plot_ratio, 'adj_value', 'adj_%s' % plot_ratio]
-        ]
-
-        ylim = 1.1*max(
-            sub_df['base_%s' % plot_ratio].max(),
-            sub_df['adj_%s' % plot_ratio].max(),
-            1.0
-            )
-
-        xmin = 0.8*min(
-            sub_df['base_value'].min(),
-            sub_df['adj_value'].min()
-            )
-        xmax = 1.1*max(
-            sub_df['base_value'].max(),
-            sub_df['adj_value'].max()
-            )
-
-        arr = sub_df.values
-
-        # plot a reference line at y = 1 and the desired points
-        plt.plot((0,1),(1,1),'k-', zorder=0)
-        for x0, y0, x1, y1 in arr:
-            if plot_type == 'shift':
-                plt.plot((x0,x1), (y0,y1), 'k-', alpha=0.5)
-            if plot_type in ('before', 'shift'):
-                plt.plot(x0, y0, color='C0', marker='o')
-            if plot_type in ('after', 'shift'):
-                plt.plot(x1, y1, color='C1', marker='o')
-
-        # For after and shift plots, add the composite point as a red diamond
-        if plot_type in ('after', 'shift'):
-
-            comp_arr = self.composite_results.loc[
-                (self.composite_results['list_size'] == list_size)
-                &
-                (self.composite_results['metric'] == metric)
-                &
-                (self.composite_results['train_end_time'] == dateparser.parse(date_pair[1]))
-                &
-                (self.composite_results['past_train_end_time'] == dateparser.parse(date_pair[0]))
-            ,
-            ['value', plot_ratio]
-            ].values
-
-            if len(comp_arr) > 1:
-                raise ValueError("Uniqueness error! Check composite results for duplicate results.")
-
-            plt.plot(comp_arr[0][0], comp_arr[0][1], marker='D', color='red', markersize=7)
-
-        ax = plt.gca()
-        ax.set_xlim((xmin, xmax))
-        ax.set_ylim((0.0, ylim))
-        ax.set_xlabel('%s%s_abs' % (metric, list_size))
-        ax.set_ylabel(ylabel)
-        ax.set_title(plot_title)
-
-        # plt.show()
-
-        return {recall_ratio: ax}
+                    
+                    
+def get_config(directory):
+    database_config = None
+    with open(directory+"/config.yaml") as f:
+        database_config = yaml.full_load(f)
+    if directory in []:
+        database_config["coalesce"] = True
+        
+    if directory == "education_crowdfunding_replication":
+        database_config['date_pairs_all'] = [('2011-03-01', '2011-03-01'), ('2011-03-01', '2011-07-01'), ('2011-05-01', '2011-05-01'), ('2011-05-01', '2011-09-01'), ('2011-07-01', '2011-07-01'), ('2011-07-01', '2011-11-01'), ('2011-09-01', '2011-09-01'), ('2011-09-01', '2012-01-01'), ('2011-11-01', '2011-11-01'), ('2011-11-01', '2012-03-01'), ('2012-01-01', '2012-01-01'), ('2012-01-01', '2012-05-01'), ('2012-03-01', '2012-03-01'), ('2012-03-01', '2012-07-01'), ('2012-05-01', '2012-05-01'), ('2012-05-01', '2012-09-01'), ('2012-07-01', '2012-07-01'), ('2012-07-01', '2012-11-01'), ('2012-09-01', '2012-09-01'), ('2012-09-01', '2013-01-01')]
+    return database_config
     
-def ra_procedure(weights=[0.99, 0.01], demo_col="median_income", working_schema="kit_bias_adj", results_schema="bias_results", list_size=500, alternate_save_names=[], engine_donors=None, config=None, pause_phases=False, exhaustive=False, entity_selection=False, small_model_selection=False):
+                   
+    
+def ra_procedure(directory, weights=[0.99, 0.01], exhaustive_n_steps=15, alternate_save_names=[], engine_donors=None, config=None, pause_phases=False, exhaustive=False, small_model_selection=False, single_model=False, entity_selection=False):
+    if single_model:
+        small_model_selection = True
+    database_config = get_config(directory)
+    database = database_config['database']
+    demo_col =  database_config['demo_col']
+    working_schema = database_config['working_schema']
+    results_schema = database_config['results_schema']
+    list_size = database_config['list_size']
+    date_list = database_config['date_list']
+    experiment_hashes = database_config['experiment_hashes']
+    date_pairs_all = database_config.get('date_pairs_all', None)
+    coalesce = database_config.get('coalesce', False)
+    min_separations = database_config.get('min_separations', 1)
+    if single_model:
+        single_model = database_config['single_model']
+    else:
+        single_model = None
     if engine_donors is None or config is None:
-        with open('../../config/db_default_profile.yaml') as fd:
+        with open('../config/db_default_profile.yaml') as fd:
             config = yaml.full_load(fd)
             dburl = sqlalchemy.engine.url.URL.create(
                 "postgresql",
                 host=config["host"],
                 username=config["user"],
-                database="san_jose_housing_triage",
+                database=database,
                 password=config["pass"],
                 port=config["port"],
             )
             engine_donors = sqlalchemy.create_engine(dburl, poolclass=sqlalchemy.pool.QueuePool)
-        
-    
-    date_list = ["2014-06-01", "2014-09-01", "2014-12-01", "2015-03-01", "2015-06-01", "2015-09-01", "2015-12-01", "2016-03-01", '2016-04-01']
-    
-    date_pairs_all = []
-    for i, d in enumerate(date_list[:-1]):
-        date_pairs_all.append((date_list[i], date_list[i]))
-        date_pairs_all.append((date_list[i], date_list[i+1]))
-        
-        common_params = {"pg_role": config["user"], "schema": working_schema, "experiment_hashes": ['357e3a5bc7d3d7cfc2c13db8ea428413'], 'demo_col': demo_col, "subsample": False, "bootstrap": False, "entity_demos":f'{working_schema}.entity_demos', "list_sizes": [list_size], "date_list": date_list}
 
 
+    if date_pairs_all is None:
+        date_pairs_all = []
+        for i, d in enumerate(date_list[:-1]):
+            date_pairs_all.append((date_list[i], date_list[i]))
+            date_pairs_all.append((date_list[i], date_list[i+1]))
+            
+    common_params = {"pg_role": config["user"], "schema": working_schema, "experiment_hashes": experiment_hashes, 'demo_col': demo_col, "subsample": False, "bootstrap": False, "entity_demos":f'{working_schema}.entity_demos', "list_sizes": [list_size], "date_list": date_list, "min_separations": min_separations, "exhaustive_n_steps": exhaustive_n_steps, 'coalesce': coalesce, 'single_model': single_model}
 
     if not entity_selection:    
         engine_donors.execute(f'TRUNCATE TABLE {results_schema}.model_adjustment_results_{demo_col};')
         engine_donors.execute(f'TRUNCATE TABLE {working_schema}.model_adjustment_group_k_{demo_col};')
         if exhaustive:
-            for al in string.ascii_lowercase[:10]:
-                engine_donors.execute(f'TRUNCATE TABLE {results_schema}.exhaustive_{al};')
+            for index in range(exhaustive_n_steps):
+                engine_donors.execute(f"DROP TABLE IF EXISTS {results_schema}.exhaustive_{index};")
+                engine_donors.execute(f"CREATE TABLE {results_schema}.exhaustive_{index} AS SELECT * FROM {results_schema}.model_adjustment_results_{demo_col};")
+                engine_donors.execute(f'TRUNCATE TABLE {results_schema}.exhaustive_{index};')
 
         engine_donors.execute('COMMIT;')
-
 
         for dp_idx in range(0, len(date_pairs_all), 2):
             date_pairs = [ date_pairs_all[dp_idx], date_pairs_all[dp_idx+1] ]
@@ -435,22 +324,21 @@ def ra_procedure(weights=[0.99, 0.01], demo_col="median_income", working_schema=
             engine=engine_donors
             ra = RecallAdjuster(engine=engine, params=params, pause_phases=pause_phases, exhaustive=exhaustive, small_model_selection=small_model_selection)
 
-            if not exhaustive:
-                engine_donors.execute(f"""
-                    INSERT INTO {results_schema}.model_adjustment_results_{demo_col} 
-                    SELECT * FROM {working_schema}.model_adjustment_results_{demo_col};
-                """)
+            engine_donors.execute(f"""
+                INSERT INTO {results_schema}.model_adjustment_results_{demo_col} 
+                SELECT * FROM {working_schema}.model_adjustment_results_{demo_col};
+            """)
 
-                engine_donors.execute(f"""
-                    INSERT INTO {results_schema}.model_adjustment_group_k_{demo_col} 
-                    SELECT * FROM {working_schema}.model_adjustment_group_k_{demo_col} gkp WHERE (gkp.model_group_id, gkp.train_end_time, gkp.demo_value, gkp.group_k) NOT IN (SELECT * FROM {results_schema}.model_adjustment_group_k_{demo_col})
-                """)
+            engine_donors.execute(f"""
+                INSERT INTO {results_schema}.model_adjustment_group_k_{demo_col} 
+                SELECT * FROM {working_schema}.model_adjustment_group_k_{demo_col} gkp WHERE (gkp.model_group_id, gkp.train_end_time, gkp.demo_value, gkp.group_k) NOT IN (SELECT * FROM {results_schema}.model_adjustment_group_k_{demo_col})
+            """)
 
-            else:
-                for al in string.ascii_lowercase[:10]:
+            if exhaustive:
+                for index in range(exhaustive_n_steps):
                     engine_donors.execute(f"""
-                        INSERT INTO {results_schema}.exhaustive_{al} 
-                        SELECT * FROM {working_schema}.exhaustive_{al};
+                        INSERT INTO {results_schema}.exhaustive_{index} 
+                        SELECT * FROM {working_schema}.exhaustive_{index};
                     """)
 
             engine_donors.execute("COMMIT;")
@@ -461,15 +349,11 @@ def ra_procedure(weights=[0.99, 0.01], demo_col="median_income", working_schema=
             sql = f"DROP TABLE IF EXISTS {results_schema}.{save_name}; CREATE TABLE {results_schema}.{save_name} AS SELECT * FROM {results_schema}.model_adjustment_results_{demo_col};"
             engine_donors.execute(sql)
             engine_donors.execute("COMMIT;")
-            
-        if not small_model_selection:
-            engine_donors.execute(f'DROP TABLE IF EXISTS {working_schema}.saved_model_adjustment_results_{demo_col};')
-            engine_donors.execute(f'CREATE TABLE {working_schema}.saved_model_adjustment_results_{demo_col} AS SELECT * FROM {results_schema}.model_adjustment_results_{demo_col}')
-            engine_donors.execute('COMMIT;')
-    
     else:
+        engine_donors.execute(f'TRUNCATE TABLE {working_schema}.model_adjustment_results_{demo_col};')
+        engine_donors.execute(f'INSERT INTO {working_schema}.model_adjustment_results_{demo_col} SELECT * FROM {results_schema}.model_adjustment_results_{demo_col}')
+        engine_donors.execute('COMMIT;')
         ws = [0.99, 0.9, 0.8, 0.7, 0.6, 0.5, 0.4, 0.3, 0.2, 0.1, 0.01]
-
         for w in ws:
             weights = [w, 1-w]
             print(w)
@@ -503,45 +387,44 @@ def ra_procedure(weights=[0.99, 0.01], demo_col="median_income", working_schema=
                         """)
                 engine_donors.execute("COMMIT")
 
-
         
-def multi_weight_ra_procedure(small_model_selection=False):
+def multi_weight_ra_procedure(directory, small_model_selection=False):
     w = 0.99
     print(f"Procedure with weights: {w}")
-    ra_procedure(weights=[w, 1-w], alternate_save_names=["save_res_a"], small_model_selection=small_model_selection)
+    ra_procedure(directory, weights=[w, 1-w], alternate_save_names=["save_res_a"], small_model_selection=small_model_selection)
     w = 0.9
     print(f"Procedure with weights: {w}")
-    ra_procedure(weights=[w, 1-w], alternate_save_names=["save_res_b"], small_model_selection=small_model_selection)
+    ra_procedure(directory, weights=[w, 1-w], alternate_save_names=["save_res_b"], small_model_selection=small_model_selection)
     w = 0.8
     print(f"Procedure with weights: {w}")    
-    ra_procedure(weights=[w, 1-w], alternate_save_names=["save_res_c"], small_model_selection=small_model_selection)
+    ra_procedure(directory, weights=[w, 1-w], alternate_save_names=["save_res_c"], small_model_selection=small_model_selection)
     w = 0.7
     print(f"Procedure with weights: {w}")
-    ra_procedure(weights=[w, 1-w], alternate_save_names=["save_res_d"], small_model_selection=small_model_selection)
+    ra_procedure(directory, weights=[w, 1-w], alternate_save_names=["save_res_d"], small_model_selection=small_model_selection)
     w = 0.6
     print(f"Procedure with weights: {w}")
-    ra_procedure(weights=[w, 1-w], alternate_save_names=["save_res_e"], small_model_selection=small_model_selection)
+    ra_procedure(directory, weights=[w, 1-w], alternate_save_names=["save_res_e"], small_model_selection=small_model_selection)
     w = 0.5
     print(f"Procedure with weights: {w}")
-    ra_procedure(weights=[w, 1-w], alternate_save_names=["save_res_f"], small_model_selection=small_model_selection)
+    ra_procedure(directory, weights=[w, 1-w], alternate_save_names=["save_res_f"], small_model_selection=small_model_selection)
     w = 0.4
     print(f"Procedure with weights: {w}")
-    ra_procedure(weights=[w, 1-w], alternate_save_names=["save_res_g"], small_model_selection=small_model_selection)
+    ra_procedure(directory, weights=[w, 1-w], alternate_save_names=["save_res_g"], small_model_selection=small_model_selection)
     w = 0.3
     print(f"Procedure with weights: {w}")
-    ra_procedure(weights=[w, 1-w], alternate_save_names=["save_res_h"], small_model_selection=small_model_selection)
+    ra_procedure(directory, weights=[w, 1-w], alternate_save_names=["save_res_h"], small_model_selection=small_model_selection)
     w = 0.2
     print(f"Procedure with weights: {w}")
-    ra_procedure(weights=[w, 1-w], alternate_save_names=["save_res_i"], small_model_selection=small_model_selection)
+    ra_procedure(directory, weights=[w, 1-w], alternate_save_names=["save_res_i"], small_model_selection=small_model_selection)
     w = 0.1
     print(f"Procedure with weights: {w}")
-    ra_procedure(weights=[w, 1-w], alternate_save_names=["save_res_j"], small_model_selection=small_model_selection)
+    ra_procedure(directory, weights=[w, 1-w], alternate_save_names=["save_res_j"], small_model_selection=small_model_selection)
     w = 0.01
     print(f"Procedure with weights: {w}")
-    ra_procedure(weights=[w, 1-w], alternate_save_names=["save_res_k"], small_model_selection=small_model_selection)
-
+    ra_procedure(directory, weights=[w, 1-w], alternate_save_names=["save_res_k"], small_model_selection=small_model_selection)
     
         
 
 if __name__ == "__main__":
-    ra_procedure(weights=[1, 0], entity_selection=False)
+    ra_procedure(directory, weights=[1, 0], pause_phases=False, entity_selection=False, small_model_selection=False)
+    

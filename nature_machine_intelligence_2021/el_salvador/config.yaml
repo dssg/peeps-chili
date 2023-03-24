@@ -1,0 +1,8 @@
+database: el_salvador_education
+working_schema: bias_analysis_temp
+results_schema: bias_analysis
+demo_col: ovg
+demo_values: ["1", "0"]
+list_size: 10000
+date_list: ["2010-01-01", "2011-01-01", "2012-01-01", "2013-01-01", "2014-01-01", "2015-01-01", "2016-01-01"]
+experiment_hashes: ['1389879cda302717c1e258fefa6ea1a9','273fba59016d9ac39f25d5c654866c2d', '41c9ca9094772dbb886db530f7988cb6', '58669c16e9e0054273346eefa313922d', 'af0453996be5ae6ee2bcfbc145a8dca6', 'de9c7c65bf2f49252abfd1e89d4b9e7c', 'fb8fa78e0fc7c1ab9f21f2536091d9a3']

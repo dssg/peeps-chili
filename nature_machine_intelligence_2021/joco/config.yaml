@@ -1,0 +1,8 @@
+database: johnson_ddj
+working_schema: kit_bias_class_test
+results_schema: kit_bias_testbed
+demo_col: race_2way
+demo_values: ["white", "nonwhite"]
+list_size: 500
+date_list : ['2014-04-01', '2014-08-01', '2014-12-01', '2015-04-01', '2015-08-01', '2015-12-01', '2016-04-01', '2016-08-01', '2016-12-01', '2017-04-01', '2017-08-01', '2017-12-01', '2018-04-01']
+experiment_hashes: ['09b3bcab5a6e1eb1c712571f6a5abb75']
