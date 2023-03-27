@@ -281,7 +281,7 @@ CREATE TABLE {{ schema }}.tmp_bias_mod_adjusted_group_nums AS (
     GROUP BY 1,2,3,4,5,6
 ); 
 
-INSERT INTO {{ schema }}.model_adjustment_group_k_plevel
+INSERT INTO {{ schema }}.model_adjustment_group_k_{{demo_col}}
 SELECT gn.model_group_id , gn.past_train_end_time as train_end_time, gn.demo_value, gn.group_k 
 FROM {{schema}}.tmp_bias_mod_adjusted_group_nums gn;
 
