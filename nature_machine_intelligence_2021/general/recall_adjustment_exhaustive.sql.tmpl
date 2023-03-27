@@ -298,7 +298,7 @@ CREATE INDEX ON {{schema}}.tmp_bias_mod_adjusted(model_id, list_size, metric, pa
 DROP TABLE IF EXISTS {{ schema }}.tmp_bias_mod_multi_adjusted_group_nums;
 CREATE TABLE {{ schema }}.tmp_bias_mod_multi_adjusted_group_nums AS (
     WITH tmp_group_k AS (
-        SELECT model_group_id , train_end_time , demo_value , CASE WHEN demo_value  = 'highest' THEN CEILING(AVG(group_k)) 
+        SELECT model_group_id , train_end_time::TIMESTAMP , demo_value , CASE WHEN demo_value  = 'highest' THEN CEILING(AVG(group_k)) 
         ELSE FLOOR(AVG(group_k)) END AS group_k 
         FROM {{schema}}.model_adjustment_group_k_{{ demo_col }} group by 1, 2, 3 order by 1, 2, 3
         )
