@@ -99,17 +99,35 @@ CREATE TABLE {{ schema }}.tmp_bias_mod_multi_adjusted_group_nums AS (
 );
 
 
-DROP TABLE IF EXISTS {{ schema }}.tmp_selected_entities;
-CREATE TABLE {{ schema }}.tmp_selected_entities as 
-(SELECT rr.model_group_id, rr.train_end_time, entity_id, score, label_value, model_rank, rn_demo
-  FROM {{ schema }}.tmp_bias_rolling_recall rr
-  JOIN {{ schema }}.tmp_bias_mod_multi_adjusted_group_nums gn
-    ON gn.model_group_id = rr.model_group_id
-    AND gn.future_train_end_time = rr.train_end_time
-    AND gn.demo_value = rr.demo_value
-    AND rr.num_demo_rolling <= gn.group_k);
+INSERT INTO {{schema}}.entity_distribution
+(select train_end_time, model_rank, rn_demo, demo_value, recall_demo_rolling, precision_demo_rolling, score 
+from {{schema}}.tmp_bias_rolling_recall rr join {{schema}}.tmp_bias_end_times et on rr.train_end_time = et.future_train_end_time
+where rr.model_rank < 3 * (select MAX(list_size) from {{schema}}.tmp_bias_list_sizes));
+
     
-    
+with tmp_base as (select train_end_time, rr.demo_value, MIN(group_k) as base_group_K, MAX(model_rank) - MIN(model_rank) as base_model_rank, 
+MAX(recall_demo_rolling) - MIN(recall_demo_rolling) as base_demo_rolling,
+MAX(precision_demo_rolling) - MIN(precision_demo_rolling) as base_precision_demo_rolling,
+MAX(score) - MIN(score) as base_score
+from {{ schema }}.tmp_bias_rolling_recall rr join {{ schema }}.tmp_bias_mod_overall_group_nums gn 
+on rr.train_end_time  = gn.future_train_end_time and rr.demo_value = gn.demo_value and rr.rn_demo > gn.group_k-5 and rr.rn_demo < gn.group_k+5
+group by 1, 2), 
+tmp_adj as (select train_end_time, rr.demo_value, MIN(group_k) as adj_group_K, MAX(model_rank) - MIN(model_rank) as adj_model_rank, 
+MAX(recall_demo_rolling) - MIN(recall_demo_rolling) as adj_demo_rolling,
+MAX(precision_demo_rolling) - MIN(precision_demo_rolling) as adj_precision_demo_rolling,
+MAX(score) - MIN(score) as adj_score
+from {{ schema }}.tmp_bias_rolling_recall rr join {{ schema }}.tmp_bias_mod_adjusted_group_nums gn 
+on rr.train_end_time  = gn.future_train_end_time and rr.demo_value = gn.demo_value and rr.rn_demo > gn.group_k-5 and rr.rn_demo < gn.group_k+5
+group by 1, 2), 
+tmp_madj as (select train_end_time, rr.demo_value, MIN(group_k) as multi_adj_group_K, MAX(model_rank) - MIN(model_rank) as multi_adj_model_rank, 
+MAX(recall_demo_rolling) - MIN(recall_demo_rolling) as multi_adj_demo_rolling,
+MAX(precision_demo_rolling) - MIN(precision_demo_rolling) as multi_adj_precision_demo_rolling,
+MAX(score) - MIN(score) as multi_adj_score
+from {{ schema }}.tmp_bias_rolling_recall rr join {{ schema }}.tmp_bias_mod_adjusted_group_nums gn 
+on rr.train_end_time  = gn.future_train_end_time and rr.demo_value = gn.demo_value and rr.rn_demo > gn.group_k-5 and rr.rn_demo < gn.group_k+5
+group by 1, 2)
+insert into {{schema}}.entity_delta_distribution (
+select * from tmp_base join tmp_adj using(train_end_time , demo_value) join tmp_madj using(train_end_time, demo_value));
 
 
 --DROP TABLE IF EXISTS {{ schema }}.tmp_bias_rolling_recall CASCADE;

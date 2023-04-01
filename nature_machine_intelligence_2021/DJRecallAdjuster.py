@@ -33,7 +33,7 @@ class RecallAdjuster(object):
         pause_phases=False, 
         exhaustive=False, 
         small_model_selection=False, 
-        entity_selection=False):
+        entity_analysis=False):
         """
         Arguments:
             engine: 
@@ -84,7 +84,7 @@ class RecallAdjuster(object):
                 Runs bias adjustment with group_k +- 50 on both sides to measure stability of results to adjustment thresholds
             small_model_selection:
                 True if you want to use the model_adjustment_results_{demo_col} table to select only the best models for the next step of recall adjustment. 
-            entity_selection:
+            entity_analysis:
                 Runs entity selection instead of recall adjustment
         """
 
@@ -133,8 +133,8 @@ class RecallAdjuster(object):
         if exhaustive:
             adjustment_file = "general/recall_adjustment_exhaustive.sql.tmpl"
             self.params['exhaustive_list'] = self.get_exhaustive_list()
-        if entity_selection:
-            adjustment_file = "general/entity_selection.sql.tmpl"
+        if entity_analysis:
+            adjustment_file = "general/entity_analysis.sql.tmpl"
         sql = Template(open(adjustment_file, 'r').read()).render(**self.params)
         self.engine.execute(sql)
         self.engine.execute("COMMIT")
@@ -260,7 +260,7 @@ def get_config(directory):
     
                    
     
-def ra_procedure(directory, weights=[0.99, 0.01], exhaustive_n_steps=15, alternate_save_names=[], engine_donors=None, config=None, pause_phases=False, exhaustive=False, small_model_selection=False, single_model=False, entity_selection=False):
+def ra_procedure(directory, weights=[0.99, 0.01], exhaustive_n_steps=15, alternate_save_names=[], engine_donors=None, config=None, pause_phases=False, exhaustive=False, small_model_selection=False, single_model=False, entity_analysis=False):
     if single_model:
         small_model_selection = True
     database_config = get_config(directory)
@@ -274,7 +274,7 @@ def ra_procedure(directory, weights=[0.99, 0.01], exhaustive_n_steps=15, alterna
     date_pairs_all = database_config.get('date_pairs_all', None)
     coalesce = database_config.get('coalesce', False)
     min_separations = database_config.get('min_separations', 1)
-    if single_model:
+    if single_model or entity_analysis:
         single_model = database_config['single_model']
     else:
         single_model = None
@@ -300,7 +300,7 @@ def ra_procedure(directory, weights=[0.99, 0.01], exhaustive_n_steps=15, alterna
             
     common_params = {"pg_role": config["user"], "schema": working_schema, "experiment_hashes": experiment_hashes, 'demo_col': demo_col, "subsample": False, "bootstrap": False, "entity_demos":f'{working_schema}.entity_demos', "list_sizes": [list_size], "date_list": date_list, "min_separations": min_separations, "exhaustive_n_steps": exhaustive_n_steps, 'coalesce': coalesce, 'single_model': single_model}
 
-    if not entity_selection:    
+    if not entity_analysis:    
         engine_donors.execute(f'TRUNCATE TABLE {results_schema}.model_adjustment_results_{demo_col};')
         engine_donors.execute(f'TRUNCATE TABLE {working_schema}.model_adjustment_group_k_{demo_col};')
         if exhaustive:
@@ -350,42 +350,32 @@ def ra_procedure(directory, weights=[0.99, 0.01], exhaustive_n_steps=15, alterna
             engine_donors.execute(sql)
             engine_donors.execute("COMMIT;")
     else:
-        engine_donors.execute(f'TRUNCATE TABLE {working_schema}.model_adjustment_results_{demo_col};')
-        engine_donors.execute(f'INSERT INTO {working_schema}.model_adjustment_results_{demo_col} SELECT * FROM {results_schema}.model_adjustment_results_{demo_col}')
-        engine_donors.execute('COMMIT;')
-        ws = [0.99, 0.9, 0.8, 0.7, 0.6, 0.5, 0.4, 0.3, 0.2, 0.1, 0.01]
-        for w in ws:
-            weights = [w, 1-w]
-            print(w)
-            engine_donors.execute(f'TRUNCATE TABLE {working_schema}.model_adjustment_group_k_{demo_col};')
-            engine_donors.execute('COMMIT;')
-            for dp_idx in range(0, len(date_pairs_all), 2):
-                date_pairs = [ date_pairs_all[dp_idx], date_pairs_all[dp_idx+1] ]
-                print(date_pairs)
-                params = common_params.copy()
-                if isinstance(date_pairs[0], str):
-                    date_pairs = [date_pairs]
-                params['date_pairs'] = date_pairs
-                params['weights'] = weights
+        engine_donors.execute(f"drop table if exists {working_schema}.entity_distribution;")
+        sql = f"create table {working_schema}.entity_distribution as (select '2012-09-01 00:00:00.000'::TIMESTAMP as train_end_time, 1 as model_rank, 1 as rn_demo, 'n' as demo_value, 0.1 as recall_demo_rolling, 0.1 as precision_demo_rolling, 0.1 as score from {working_schema}.tmp_bias_models);"
+        engine_donors.execute(sql)
+        engine_donors.execute(f"truncate table {working_schema}.entity_distribution;")
+        
+
+        engine_donors.execute(f"drop table if exists {working_schema}.entity_delta_distribution;")
+        sql = f"create table {working_schema}.entity_delta_distribution as (select '2012-09-01 00:00:00.000'::TIMESTAMP as train_end_time, 'n' as demo_value, 1 as base_group_k, 1 as base_model_rank, 0.1 as base_recall_demo_rolling, 0.1 as base_precision_demo_rolling, 0.1 as base_score, 1 as adj_group_k, 1 as adj_model_rank, 0.1 as adj_recall_demo_rolling, 0.1 as adj_precision_demo_rolling, 0.1 as adj_score, 1 as multi_adj_group_k, 1 as multi_adj_model_rank, 0.1 as multi_adj_recall_demo_rolling, 0.1 as multi_adj_precision_demo_rolling, 0.1 as multi_adj_score from {working_schema}.tmp_bias_models);"
+        engine_donors.execute(sql)
+        engine_donors.execute(f"truncate table {working_schema}.entity_delta_distribution")
+        
+        engine_donors.execute("COMMIT")
+        for dp_idx in range(0, len(date_pairs_all), 2):
+            date_pairs = [ date_pairs_all[dp_idx], date_pairs_all[dp_idx+1] ]
+            print(date_pairs)
+            params = common_params.copy()
+            if isinstance(date_pairs[0], str):
+                date_pairs = [date_pairs]
+            params['date_pairs'] = date_pairs
+            params['weights'] = weights
 
 
-                engine=engine_donors
-                if weights[0] == 0.99:
-                    engine_donors.execute(f"DROP TABLE IF EXISTS {results_schema}.selected_entities")
-                    engine_donors.execute("COMMIT")
-                ra = RecallAdjuster(engine=engine, params=params, pause_phases=pause_phases, small_model_selection=True, entity_selection=True)
-
-                if weights[0] == 0.99:
-                    engine_donors.execute(f"""
-                                CREATE TABLE {results_schema}.selected_entities AS
-                                SELECT *, {weights[0]} as weight FROM {working_schema}.tmp_selected_entities;
-                            """)
-                else:
-                    engine_donors.execute(f"""
-                            INSERT INTO {results_schema}.selected_entities 
-                            SELECT *, {weights[0]} as weight FROM {working_schema}.tmp_selected_entities;
-                        """)
-                engine_donors.execute("COMMIT")
+            
+            engine=engine_donors
+            ra = RecallAdjuster(engine=engine, params=params, pause_phases=pause_phases, small_model_selection=True, entity_analysis=True)
+            engine_donors.execute("COMMIT")
 
         
 def multi_weight_ra_procedure(directory, small_model_selection=False):
