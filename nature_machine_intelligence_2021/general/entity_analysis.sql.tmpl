@@ -123,7 +123,7 @@ tmp_madj as (select train_end_time, rr.demo_value, MIN(group_k) as multi_adj_gro
 MAX(recall_demo_rolling) - MIN(recall_demo_rolling) as multi_adj_demo_rolling,
 MAX(precision_demo_rolling) - MIN(precision_demo_rolling) as multi_adj_precision_demo_rolling,
 MAX(score) - MIN(score) as multi_adj_score
-from {{ schema }}.tmp_bias_rolling_recall rr join {{ schema }}.tmp_bias_mod_adjusted_group_nums gn 
+from {{ schema }}.tmp_bias_rolling_recall rr join {{ schema }}.tmp_bias_mod_multi_adjusted_group_nums gn 
 on rr.train_end_time  = gn.future_train_end_time and rr.demo_value = gn.demo_value and rr.rn_demo > gn.group_k-5 and rr.rn_demo < gn.group_k+5
 group by 1, 2)
 insert into {{schema}}.entity_delta_distribution (
