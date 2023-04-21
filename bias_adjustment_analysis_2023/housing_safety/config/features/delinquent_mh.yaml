@@ -1,0 +1,23 @@
+- # features for delinquent MH permits 
+    prefix: 'dlnqt_mh'
+    from_obj: 'staging.mh_delinquent_permits'
+    knowledge_date_column: 'delinquent_knowledge_date'
+
+    # using zero_noflag for all imputations at the moment to replicate the
+    # behavior of old triage...
+    aggregates_imputation:
+        all:
+            type: 'zero_noflag'
+    categoricals_imputation:
+        all:
+            type: 'zero_noflag'
+
+    aggregates:
+        - # any and number of delinquent mh permits
+            quantity: 'dlnqt_flag'
+            metrics: ['max', 'sum']
+        - # any and number of delinquent permits sent to finance
+            quantity: 'dlnqt_fnce_flag'
+            metrics: ['max', 'sum']
+    intervals: ['1y', '3y', '5y', '10y', '15y']
+    groups: ['entity_id']
