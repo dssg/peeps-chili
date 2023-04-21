@@ -1,0 +1,6 @@
+# fill in the details for your server and rename this file to db_profile.yaml
+host: lady-aberlin.dssg.io
+user: dhananja
+db: san_jose_housing
+pass: breadKINDthinFRIDAY
+port: 5432

@@ -1,0 +1,33 @@
+
+-- ASSUMPTIONS:
+--    1. No matchdatetime needed
+
+-- Donors-specific entity_demos table creation
+DROP TABLE IF EXISTS {{schema}}.entity_demos;
+
+CREATE TABLE {{schema}}.entity_demos
+AS
+WITH ref_models_pre AS (
+    SELECT DISTINCT ON (train_end_time)
+    model_id, train_end_time
+    FROM tmp_bias_models
+    ORDER BY train_end_time, RANDOM()
+)
+,ref_models AS (
+    SELECT rmp.model_id, rmp.train_end_time
+    FROM ref_models_pre rmp
+    JOIN model_metadata.models m USING(model_id)
+    JOIN model_metadata.model_groups mg USING(model_group_id)
+)
+SELECT DISTINCT p.entity_id,
+p.as_of_date,
+replace(plevel_2way, ' ', '_') as plevel
+from test_results.predictions p
+join ref_models rm USING(model_id)
+join projectid_mapping USING(entity_id)
+join projects using(projectid);
+
+-- ALTER TABLE {{schema}}.entity_demos ADD PRIMARY KEY (entity_id, as_of_date);
+CREATE INDEX entity_id_index ON {{schema}}.entity_demos (entity_id);
+
+

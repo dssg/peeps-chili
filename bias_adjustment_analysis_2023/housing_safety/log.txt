@@ -1,0 +1,765 @@
+[01;32mdhananja@ip-10-0-1-114[00m:[01;34m~/peeps-chili/nature_machine_intelligence_2021/housing_saffety[00m$ python D*.py
+Procedure with weights: 0.99
+[('2014-06-01', '2014-06-01'), ('2014-06-01', '2014-09-01')]
+Traceback (most recent call last):
+  File "/home/dhananja/.pyenv/versions/3.8.1/lib/python3.8/site-packages/sqlalchemy/engine/base.py", line 1900, in _execute_context
+    self.dialect.do_execute(
+  File "/home/dhananja/.pyenv/versions/3.8.1/lib/python3.8/site-packages/sqlalchemy/engine/default.py", line 736, in do_execute
+    cursor.execute(statement, parameters)
+psycopg2.errors.InsufficientPrivilege: permission denied for database san_jose_housing
+
+
+The above exception was the direct cause of the following exception:
+
+Traceback (most recent call last):
+  File "DJRecallAdjuster.py", line 551, in <module>
+    multi_weight_ra_procedure()
+  File "DJRecallAdjuster.py", line 516, in multi_weight_ra_procedure
+    ra_procedure(weights=[w, 1-w], alternate_save_names=["save_res_a"])
+  File "DJRecallAdjuster.py", line 483, in ra_procedure
+    ra = RecallAdjuster(engine=engine, params=params, pause_phases=pause_phases, exhaustive=exhaustive)
+  File "DJRecallAdjuster.py", line 114, in __init__
+    self.engine.execute(sql)
+  File "/home/dhananja/.pyenv/versions/3.8.1/lib/python3.8/site-packages/sqlalchemy/engine/base.py", line 1365, in execute
+    return self._exec_driver_sql(
+  File "/home/dhananja/.pyenv/versions/3.8.1/lib/python3.8/site-packages/sqlalchemy/engine/base.py", line 1669, in _exec_driver_sql
+    ret = self._execute_context(
+  File "/home/dhananja/.pyenv/versions/3.8.1/lib/python3.8/site-packages/sqlalchemy/engine/base.py", line 1943, in _execute_context
+    self._handle_dbapi_exception(
+  File "/home/dhananja/.pyenv/versions/3.8.1/lib/python3.8/site-packages/sqlalchemy/engine/base.py", line 2124, in _handle_dbapi_exception
+    util.raise_(
+  File "/home/dhananja/.pyenv/versions/3.8.1/lib/python3.8/site-packages/sqlalchemy/util/compat.py", line 208, in raise_
+    raise exception
+  File "/home/dhananja/.pyenv/versions/3.8.1/lib/python3.8/site-packages/sqlalchemy/engine/base.py", line 1900, in _execute_context
+    self.dialect.do_execute(
+  File "/home/dhananja/.pyenv/versions/3.8.1/lib/python3.8/site-packages/sqlalchemy/engine/default.py", line 736, in do_execute
+    cursor.execute(statement, parameters)
+sqlalchemy.exc.ProgrammingError: (psycopg2.errors.InsufficientPrivilege) permission denied for database san_jose_housing
+
+[SQL: 
+SET ROLE dhananja;
+
+CREATE SCHEMA IF NOT EXISTS kit_bias_adj;
+
+-- ASSUMPTIONS:
+--    1. every model for a given train_end_time uses the same cohort
+
+
+DROP TABLE IF EXISTS kit_bias_adj.tmp_bias_end_times;
+CREATE TABLE kit_bias_adj.tmp_bias_end_times
+  AS
+  SELECT UNNEST(ARRAY['2014-06-01','2014-06-01'])::TIMESTAMP AS past_train_end_time,
+         UNNEST(ARRAY['2014-06-01','2014-09-01'])::TIMESTAMP AS future_train_end_time
+;
+
+DROP TABLE IF EXISTS kit_bias_adj.tmp_bias_list_sizes;
+CREATE TABLE kit_bias_adj.tmp_bias_list_sizes
+  AS
+  SELECT UNNEST(ARRAY[1000])::INT AS list_size
+;
+
+DROP TABLE IF EXISTS kit_bias_adj.tmp_bias_models;
+CREATE TABLE kit_bias_adj.tmp_bias_models
+  AS
+  WITH all_end_times AS (
+    SELECT DISTINCT past_train_end_time AS train_end_time FROM kit_bias_adj.tmp_bias_end_times
+    UNION DISTINCT
+    SELECT DISTINCT future_train_end_time AS train_end_time FROM kit_bias_adj.tmp_bias_end_times
+  )
+  SELECT DISTINCT MIN(m.model_id) as model_id, m.model_group_id, m.train_end_time
+  FROM triage_metadata.experiment_models em
+  JOIN triage_metadata.models m USING(model_hash)
+  JOIN triage_metadata.model_groups mg USING(model_group_id)
+  JOIN kit_bias_adj.all_end_times USING(train_end_time)
+  WHERE em.experiment_hash IN ('357e3a5bc7d3d7cfc2c13db8ea428413')
+  GROUP BY 2, 3
+;
+ALTER TABLE kit_bias_adj.tmp_bias_models ADD PRIMARY KEY (model_id);
+
+DROP TABLE IF EXISTS kit_bias_adj.tmp_bias_end_time_weights;
+CREATE TABLE kit_bias_adj.tmp_bias_end_time_weights AS 
+	(SELECT DISTINCT train_end_time, future_train_end_time, 
+    CASE WHEN future_train_end_time = '2014-06-01' THEN '2014-06-01'::TIMESTAMP WHEN future_train_end_time = '2014-09-01' THEN '2014-06-01'::TIMESTAMP WHEN future_train_end_time = '2014-12-01' THEN '2014-09-01'::TIMESTAMP WHEN future_train_end_time = '2015-03-01' THEN '2014-12-01'::TIMESTAMP WHEN future_train_end_time = '2015-06-01' THEN '2015-03-01'::TIMESTAMP WHEN future_train_end_time = '2015-09-01' THEN '2015-06-01'::TIMESTAMP WHEN future_train_end_time = '2015-12-01' THEN '2015-09-01'::TIMESTAMP WHEN future_train_end_time = '2016-03-01' THEN '2015-12-01'::TIMESTAMP WHEN future_train_end_time = '2016-04-01' THEN '2016-03-01'::TIMESTAMP ELSE '2014-06-01'::TIMESTAMP END AS past_train_end_time, 
+    CASE WHEN future_train_end_time = '2014-06-01' AND train_end_time = '2014-06-01' THEN 1.0  WHEN future_train_end_time = '2014-09-01' AND train_end_time = '2014-06-01' THEN 1.0  WHEN future_train_end_time = '2014-12-01' AND train_end_time = '2014-09-01' THEN 0.99  WHEN future_train_end_time = '2014-12-01' AND train_end_time = '2014-06-01' THEN 0.010000000000000009  WHEN future_train_end_time = '2015-03-01' AND train_end_time = '2014-12-01' THEN 0.99  WHEN future_train_end_time = '2015-03-01' AND train_end_time = '2014-09-01' THEN 0.010000000000000009  WHEN future_train_end_time = '2015-06-01' AND train_end_time = '2015-03-01' THEN 0.99  WHEN future_train_end_time = '2015-06-01' AND train_end_time = '2014-12-01' THEN 0.010000000000000009  WHEN future_train_end_time = '2015-09-01' AND train_end_time = '2015-06-01' THEN 0.99  WHEN future_train_end_time = '2015-09-01' AND train_end_time = '2015-03-01' THEN 0.010000000000000009  WHEN future_train_end_time = '2015-12-01' AND train_end_time = '2015-09-01' THEN 0.99  WHEN future_train_end_time = '2015-12-01' AND train_end_time = '2015-06-01' THEN 0.010000000000000009  WHEN future_train_end_time = '2016-03-01' AND train_end_time = '2015-12-01' THEN 0.99  WHEN future_train_end_time = '2016-03-01' AND train_end_time = '2015-09-01' THEN 0.010000000000000009  WHEN future_train_end_time = '2016-04-01' AND train_end_time = '2016-03-01' THEN 0.99  WHEN future_train_end_time = '2016-04-01' AND train_end_time = '2015-12-01' THEN 0.010000000000000009 ELSE 0 END AS weight 
+    FROM kit_bias_adj.all_end_times CROSS JOIN kit_bias_adj.tmp_bias_end_times ORDER BY train_end_time, future_train_end_time); ]
+(Background on this error at: https://sqlalche.me/e/14/f405)
+[01;32mdhananja@ip-10-0-1-114[00m:[01;34m~/peeps-chili/nature_machine_intelligence_2021/housing_saffety[00m$ python D*.py[C[C[C[C[C[C[5PscreenL[1Pcd ho*[4Plsscreen -r 3187[3Pls[C[C[C[C[C[Cls[Kcd ..screenL -ls[C[C[C[C[C[Cls[Kcd ../el*[3P$epscreen[4Plscd pe*screen -ls[C[C[C[C[C[Cpython DJ*.py[C[C[C[C[C[Cnbk[Kscreencd pe*screen -ls[C[C[C[C[C[Cnbk[Kscreen -rls[C[C[C[C[C[C[2Pgit pushcommit -m "San Jose Up"[C[C[C[C[C[C[C[C[C[Cadd *[Kstatus[C[C[C[C[C[Cnbk[Kpython DJ*.py[C[C[C[C[C[C[1Pscreen -r 116[2Pls[C[C[C[C[C[C[2Pgit pushcommit -m "joco results up"[C[C[C[C[C[C[C[C[C[Cpush[K[C[C[C[C[C[Cscreen -lsr 161[C[C[C[C[C[Cpython DJ*.py[C[C[C[C[C[Cnbk[Kgit status[1Padd *commit -m "San Jose Up"[C[C[C[C[C[C[C[C[C[Cpush[K[C[C[C[C[C[Cscreen -ls[1Pr[C[C[C[C[C[C[6Pnbkscreen -ls[C[C[C[C[C[C[4Pcd pe*screen[3Pnbkpython DJ*.py[C[C[C[C[C[C[3Pscreen -ls[C[C[C[C[C[C[4Pcd pe*[4Plsscreencd $ep../el*[C[C[C[C[C[Cls[Kscreen -lsL[K[2Pcd ..[3Plsscreen -lsr 187[2P3[C[C[C[C[C[Cls[Kcd ho*screenLpython D*.py[C[C[C[C[C[C[Kexit
+[01;32mdhananja@ip-10-0-1-114[00m:[01;34m~/peeps-chili/nature_machine_intelligence_2021/housing_sa[Kffety[00m$ python DJ*.py
+Procedure with weights: 0.99
+[('2014-06-01', '2014-06-01'), ('2014-06-01', '2014-09-01')]
+[('2014-09-01', '2014-09-01'), ('2014-09-01', '2014-12-01')]
+[('2014-12-01', '2014-12-01'), ('2014-12-01', '2015-03-01')]
+[('2015-03-01', '2015-03-01'), ('2015-03-01', '2015-06-01')]
+[('2015-06-01', '2015-06-01'), ('2015-06-01', '2015-09-01')]
+[('2015-09-01', '2015-09-01'), ('2015-09-01', '2015-12-01')]
+[('2015-12-01', '2015-12-01'), ('2015-12-01', '2016-03-01')]
+[('2016-03-01', '2016-03-01'), ('2016-03-01', '2016-04-01')]
+Procedure with weights: 0.9
+[('2014-06-01', '2014-06-01'), ('2014-06-01', '2014-09-01')]
+[('2014-09-01', '2014-09-01'), ('2014-09-01', '2014-12-01')]
+[('2014-12-01', '2014-12-01'), ('2014-12-01', '2015-03-01')]
+[('2015-03-01', '2015-03-01'), ('2015-03-01', '2015-06-01')]
+[('2015-06-01', '2015-06-01'), ('2015-06-01', '2015-09-01')]
+[('2015-09-01', '2015-09-01'), ('2015-09-01', '2015-12-01')]
+[('2015-12-01', '2015-12-01'), ('2015-12-01', '2016-03-01')]
+[('2016-03-01', '2016-03-01'), ('2016-03-01', '2016-04-01')]
+Procedure with weights: 0.8
+[('2014-06-01', '2014-06-01'), ('2014-06-01', '2014-09-01')]
+[('2014-09-01', '2014-09-01'), ('2014-09-01', '2014-12-01')]
+[('2014-12-01', '2014-12-01'), ('2014-12-01', '2015-03-01')]
+[('2015-03-01', '2015-03-01'), ('2015-03-01', '2015-06-01')]
+[('2015-06-01', '2015-06-01'), ('2015-06-01', '2015-09-01')]
+[('2015-09-01', '2015-09-01'), ('2015-09-01', '2015-12-01')]
+[('2015-12-01', '2015-12-01'), ('2015-12-01', '2016-03-01')]
+[('2016-03-01', '2016-03-01'), ('2016-03-01', '2016-04-01')]
+Procedure with weights: 0.7
+[('2014-06-01', '2014-06-01'), ('2014-06-01', '2014-09-01')]
+[('2014-09-01', '2014-09-01'), ('2014-09-01', '2014-12-01')]
+[('2014-12-01', '2014-12-01'), ('2014-12-01', '2015-03-01')]
+[('2015-03-01', '2015-03-01'), ('2015-03-01', '2015-06-01')]
+[('2015-06-01', '2015-06-01'), ('2015-06-01', '2015-09-01')]
+[('2015-09-01', '2015-09-01'), ('2015-09-01', '2015-12-01')]
+[('2015-12-01', '2015-12-01'), ('2015-12-01', '2016-03-01')]
+[('2016-03-01', '2016-03-01'), ('2016-03-01', '2016-04-01')]
+Procedure with weights: 0.6
+[('2014-06-01', '2014-06-01'), ('2014-06-01', '2014-09-01')]
+[('2014-09-01', '2014-09-01'), ('2014-09-01', '2014-12-01')]
+[('2014-12-01', '2014-12-01'), ('2014-12-01', '2015-03-01')]
+[('2015-03-01', '2015-03-01'), ('2015-03-01', '2015-06-01')]
+[('2015-06-01', '2015-06-01'), ('2015-06-01', '2015-09-01')]
+[('2015-09-01', '2015-09-01'), ('2015-09-01', '2015-12-01')]
+[('2015-12-01', '2015-12-01'), ('2015-12-01', '2016-03-01')]
+[('2016-03-01', '2016-03-01'), ('2016-03-01', '2016-04-01')]
+Procedure with weights: 0.5
+[('2014-06-01', '2014-06-01'), ('2014-06-01', '2014-09-01')]
+[('2014-09-01', '2014-09-01'), ('2014-09-01', '2014-12-01')]
+[('2014-12-01', '2014-12-01'), ('2014-12-01', '2015-03-01')]
+[('2015-03-01', '2015-03-01'), ('2015-03-01', '2015-06-01')]
+[('2015-06-01', '2015-06-01'), ('2015-06-01', '2015-09-01')]
+[('2015-09-01', '2015-09-01'), ('2015-09-01', '2015-12-01')]
+[('2015-12-01', '2015-12-01'), ('2015-12-01', '2016-03-01')]
+[('2016-03-01', '2016-03-01'), ('2016-03-01', '2016-04-01')]
+Procedure with weights: 0.4
+[('2014-06-01', '2014-06-01'), ('2014-06-01', '2014-09-01')]
+[('2014-09-01', '2014-09-01'), ('2014-09-01', '2014-12-01')]
+[('2014-12-01', '2014-12-01'), ('2014-12-01', '2015-03-01')]
+[('2015-03-01', '2015-03-01'), ('2015-03-01', '2015-06-01')]
+[('2015-06-01', '2015-06-01'), ('2015-06-01', '2015-09-01')]
+[('2015-09-01', '2015-09-01'), ('2015-09-01', '2015-12-01')]
+[('2015-12-01', '2015-12-01'), ('2015-12-01', '2016-03-01')]
+[('2016-03-01', '2016-03-01'), ('2016-03-01', '2016-04-01')]
+Procedure with weights: 0.3
+[('2014-06-01', '2014-06-01'), ('2014-06-01', '2014-09-01')]
+[('2014-09-01', '2014-09-01'), ('2014-09-01', '2014-12-01')]
+[('2014-12-01', '2014-12-01'), ('2014-12-01', '2015-03-01')]
+[('2015-03-01', '2015-03-01'), ('2015-03-01', '2015-06-01')]
+[('2015-06-01', '2015-06-01'), ('2015-06-01', '2015-09-01')]
+[('2015-09-01', '2015-09-01'), ('2015-09-01', '2015-12-01')]
+[('2015-12-01', '2015-12-01'), ('2015-12-01', '2016-03-01')]
+[('2016-03-01', '2016-03-01'), ('2016-03-01', '2016-04-01')]
+Procedure with weights: 0.2
+[('2014-06-01', '2014-06-01'), ('2014-06-01', '2014-09-01')]
+[('2014-09-01', '2014-09-01'), ('2014-09-01', '2014-12-01')]
+[('2014-12-01', '2014-12-01'), ('2014-12-01', '2015-03-01')]
+[('2015-03-01', '2015-03-01'), ('2015-03-01', '2015-06-01')]
+[('2015-06-01', '2015-06-01'), ('2015-06-01', '2015-09-01')]
+[('2015-09-01', '2015-09-01'), ('2015-09-01', '2015-12-01')]
+[('2015-12-01', '2015-12-01'), ('2015-12-01', '2016-03-01')]
+[('2016-03-01', '2016-03-01'), ('2016-03-01', '2016-04-01')]
+Procedure with weights: 0.1
+[('2014-06-01', '2014-06-01'), ('2014-06-01', '2014-09-01')]
+[('2014-09-01', '2014-09-01'), ('2014-09-01', '2014-12-01')]
+[('2014-12-01', '2014-12-01'), ('2014-12-01', '2015-03-01')]
+[('2015-03-01', '2015-03-01'), ('2015-03-01', '2015-06-01')]
+[('2015-06-01', '2015-06-01'), ('2015-06-01', '2015-09-01')]
+[('2015-09-01', '2015-09-01'), ('2015-09-01', '2015-12-01')]
+s [('2015-12-01', '2015-12-01'), ('2015-12-01', '2016-03-01')]
+[('2016-03-01', '2016-03-01'), ('2016-03-01', '2016-04-01')]
+Procedure with weights: 0.01
+[('2014-06-01', '2014-06-01'), ('2014-06-01', '2014-09-01')]
+[('2014-09-01', '2014-09-01'), ('2014-09-01', '2014-12-01')]
+[('2014-12-01', '2014-12-01'), ('2014-12-01', '2015-03-01')]
+[('2015-03-01', '2015-03-01'), ('2015-03-01', '2015-06-01')]
+[('2015-06-01', '2015-06-01'), ('2015-06-01', '2015-09-01')]
+[('2015-09-01', '2015-09-01'), ('2015-09-01', '2015-12-01')]
+[('2015-12-01', '2015-12-01'), ('2015-12-01', '2016-03-01')]
+[('2016-03-01', '2016-03-01'), ('2016-03-01', '2016-04-01')]
+[01;32mdhananja@ip-10-0-1-114[00m:[01;34m~/peeps-chili/nature_machine_intelligence_2021/housing_saffety[00m$ nbk
+[32m[I 15:12:34.253 NotebookApp](B[m Serving notebooks from local directory: /home/dhananja/peeps-chili/nature_machine_intelligence_2021/housing_safety
+[32m[I 15:12:34.253 NotebookApp](B[m Jupyter Notebook 6.4.12 is running at:
+[32m[I 15:12:34.254 NotebookApp](B[m http://localhost:1099/?token=b36511a81aef2eb54964a6b6dff117676474d729ebdfb6ab
+[32m[I 15:12:34.254 NotebookApp](B[m  or http://127.0.0.1:1099/?token=b36511a81aef2eb54964a6b6dff117676474d729ebdfb6ab
+[32m[I 15:12:34.254 NotebookApp](B[m Use Control-C to stop this server and shut down all kernels (twice to skip confirmation).
+[35m[C 15:12:34.260 NotebookApp](B[m 
+    
+    To access the notebook, open this file in a browser:
+        file:///home/dhananja/.local/share/jupyter/runtime/nbserver-12673-open.html
+    Or copy and paste one of these URLs:
+        http://localhost:1099/?token=b36511a81aef2eb54964a6b6dff117676474d729ebdfb6ab
+     or http://127.0.0.1:1099/?token=b36511a81aef2eb54964a6b6dff117676474d729ebdfb6ab
+[32m[I 15:12:39.119 NotebookApp](B[m 302 GET /?token=b36511a81aef2eb54964a6b6dff117676474d729ebdfb6ab (127.0.0.1) 0.640000ms
+[32m[I 15:12:48.521 NotebookApp](B[m Kernel started: 3b49be0f-b9de-4dd7-ab64-dc4a9571a3ae, name: py3env
+[IPKernelApp] ERROR | No such comm target registered: jupyter.widget.control
+[IPKernelApp] WARNING | No such comm: 64740721-a77a-4ef0-b8f8-cb516359f973
+[32m[I 15:14:49.238 NotebookApp](B[m Saving file at /general_notebook.ipynb
+[32m[I 15:15:30.635 NotebookApp](B[m Saving file at /DJRecallAdjuster.py
+[32m[I 15:15:56.096 NotebookApp](B[m Starting buffering for 3b49be0f-b9de-4dd7-ab64-dc4a9571a3ae:6d2d8de39858499d8ff9d9a1bb80ec00
+[32m[I 15:15:56.934 NotebookApp](B[m Kernel restarted: 3b49be0f-b9de-4dd7-ab64-dc4a9571a3ae
+[32m[I 15:15:57.151 NotebookApp](B[m Restoring connection for 3b49be0f-b9de-4dd7-ab64-dc4a9571a3ae:6d2d8de39858499d8ff9d9a1bb80ec00
+[32m[I 15:15:58.061 NotebookApp](B[m Replaying 3 buffered messages
+[32m[I 15:16:09.536 NotebookApp](B[m Saving file at /DJRecallAdjuster.py
+[32m[I 15:16:49.281 NotebookApp](B[m Saving file at /general_notebook.ipynb
+[32m[I 15:32:49.770 NotebookApp](B[m Saving file at /general_notebook.ipynb
+[32m[I 15:36:49.222 NotebookApp](B[m Saving file at /general_notebook.ipynb
+[32m[I 15:52:49.762 NotebookApp](B[m Saving file at /general_notebook.ipynb
+[32m[I 15:53:21.813 NotebookApp](B[m Saving file at /general_notebook.ipynb
+[32m[I 15:53:23.486 NotebookApp](B[m Starting buffering for 3b49be0f-b9de-4dd7-ab64-dc4a9571a3ae:6d2d8de39858499d8ff9d9a1bb80ec00
+^C[32m[I 21:18:27.069 NotebookApp](B[m interrupted
+Serving notebooks from local directory: /home/dhananja/peeps-chili/nature_machine_intelligence_2021/housing_safety
+1 active kernel
+Jupyter Notebook 6.4.12 is running at:
+http://localhost:1099/?token=b36511a81aef2eb54964a6b6dff117676474d729ebdfb6ab
+ or http://127.0.0.1:1099/?token=b36511a81aef2eb54964a6b6dff117676474d729ebdfb6ab
+Shutdown this notebook server (y/[n])? y
+[35m[C 21:18:27.993 NotebookApp](B[m Shutdown confirmed
+[32m[I 21:18:28.029 NotebookApp](B[m Shutting down 1 kernel
+[32m[I 21:18:28.165 NotebookApp](B[m Kernel shutdown: 3b49be0f-b9de-4dd7-ab64-dc4a9571a3ae
+[32m[I 21:18:30.888 NotebookApp](B[m Shutting down 0 terminals
+[01;32mdhananja@ip-10-0-1-114[00m:[01;34m~/peeps-chili/nature_machine_intelligence_2021/housing_saffety[00m$ [01;32mdhananja@ip-10-0-1-114[00m:[01;34m~/peeps-chili/nature_machine_intelligence_2021/housing_sa[Kffety[00m$ python DJ*
+Procedure with weights: 0.99
+[('2014-06-01', '2014-06-01'), ('2014-06-01', '2014-09-01')]
+[('2014-09-01', '2014-09-01'), ('2014-09-01', '2014-12-01')]
+[('2014-12-01', '2014-12-01'), ('2014-12-01', '2015-03-01')]
+[('2015-03-01', '2015-03-01'), ('2015-03-01', '2015-06-01')]
+[('2015-06-01', '2015-06-01'), ('2015-06-01', '2015-09-01')]
+[('2015-09-01', '2015-09-01'), ('2015-09-01', '2015-12-01')]
+[('2015-12-01', '2015-12-01'), ('2015-12-01', '2016-03-01')]
+[('2016-03-01', '2016-03-01'), ('2016-03-01', '2016-04-01')]
+Procedure with weights: 0.9
+[('2014-06-01', '2014-06-01'), ('2014-06-01', '2014-09-01')]
+[('2014-09-01', '2014-09-01'), ('2014-09-01', '2014-12-01')]
+[('2014-12-01', '2014-12-01'), ('2014-12-01', '2015-03-01')]
+[('2015-03-01', '2015-03-01'), ('2015-03-01', '2015-06-01')]
+[('2015-06-01', '2015-06-01'), ('2015-06-01', '2015-09-01')]
+[('2015-09-01', '2015-09-01'), ('2015-09-01', '2015-12-01')]
+[('2015-12-01', '2015-12-01'), ('2015-12-01', '2016-03-01')]
+[('2016-03-01', '2016-03-01'), ('2016-03-01', '2016-04-01')]
+Procedure with weights: 0.8
+[('2014-06-01', '2014-06-01'), ('2014-06-01', '2014-09-01')]
+[('2014-09-01', '2014-09-01'), ('2014-09-01', '2014-12-01')]
+[('2014-12-01', '2014-12-01'), ('2014-12-01', '2015-03-01')]
+[('2015-03-01', '2015-03-01'), ('2015-03-01', '2015-06-01')]
+[('2015-06-01', '2015-06-01'), ('2015-06-01', '2015-09-01')]
+[('2015-09-01', '2015-09-01'), ('2015-09-01', '2015-12-01')]
+[('2015-12-01', '2015-12-01'), ('2015-12-01', '2016-03-01')]
+[('2016-03-01', '2016-03-01'), ('2016-03-01', '2016-04-01')]
+Procedure with weights: 0.7
+[('2014-06-01', '2014-06-01'), ('2014-06-01', '2014-09-01')]
+[('2014-09-01', '2014-09-01'), ('2014-09-01', '2014-12-01')]
+[('2014-12-01', '2014-12-01'), ('2014-12-01', '2015-03-01')]
+[('2015-03-01', '2015-03-01'), ('2015-03-01', '2015-06-01')]
+[('2015-06-01', '2015-06-01'), ('2015-06-01', '2015-09-01')]
+[('2015-09-01', '2015-09-01'), ('2015-09-01', '2015-12-01')]
+[('2015-12-01', '2015-12-01'), ('2015-12-01', '2016-03-01')]
+[('2016-03-01', '2016-03-01'), ('2016-03-01', '2016-04-01')]
+Procedure with weights: 0.6
+[('2014-06-01', '2014-06-01'), ('2014-06-01', '2014-09-01')]
+[('2014-09-01', '2014-09-01'), ('2014-09-01', '2014-12-01')]
+[('2014-12-01', '2014-12-01'), ('2014-12-01', '2015-03-01')]
+[('2015-03-01', '2015-03-01'), ('2015-03-01', '2015-06-01')]
+[('2015-06-01', '2015-06-01'), ('2015-06-01', '2015-09-01')]
+[('2015-09-01', '2015-09-01'), ('2015-09-01', '2015-12-01')]
+[('2015-12-01', '2015-12-01'), ('2015-12-01', '2016-03-01')]
+[('2016-03-01', '2016-03-01'), ('2016-03-01', '2016-04-01')]
+Procedure with weights: 0.5
+[('2014-06-01', '2014-06-01'), ('2014-06-01', '2014-09-01')]
+[('2014-09-01', '2014-09-01'), ('2014-09-01', '2014-12-01')]
+[('2014-12-01', '2014-12-01'), ('2014-12-01', '2015-03-01')]
+[('2015-03-01', '2015-03-01'), ('2015-03-01', '2015-06-01')]
+[('2015-06-01', '2015-06-01'), ('2015-06-01', '2015-09-01')]
+[('2015-09-01', '2015-09-01'), ('2015-09-01', '2015-12-01')]
+[('2015-12-01', '2015-12-01'), ('2015-12-01', '2016-03-01')]
+[('2016-03-01', '2016-03-01'), ('2016-03-01', '2016-04-01')]
+Procedure with weights: 0.4
+[('2014-06-01', '2014-06-01'), ('2014-06-01', '2014-09-01')]
+[('2014-09-01', '2014-09-01'), ('2014-09-01', '2014-12-01')]
+[('2014-12-01', '2014-12-01'), ('2014-12-01', '2015-03-01')]
+[('2015-03-01', '2015-03-01'), ('2015-03-01', '2015-06-01')]
+[('2015-06-01', '2015-06-01'), ('2015-06-01', '2015-09-01')]
+[('2015-09-01', '2015-09-01'), ('2015-09-01', '2015-12-01')]
+[('2015-12-01', '2015-12-01'), ('2015-12-01', '2016-03-01')]
+[('2016-03-01', '2016-03-01'), ('2016-03-01', '2016-04-01')]
+Procedure with weights: 0.3
+[('2014-06-01', '2014-06-01'), ('2014-06-01', '2014-09-01')]
+[('2014-09-01', '2014-09-01'), ('2014-09-01', '2014-12-01')]
+[('2014-12-01', '2014-12-01'), ('2014-12-01', '2015-03-01')]
+[('2015-03-01', '2015-03-01'), ('2015-03-01', '2015-06-01')]
+[('2015-06-01', '2015-06-01'), ('2015-06-01', '2015-09-01')]
+[('2015-09-01', '2015-09-01'), ('2015-09-01', '2015-12-01')]
+[('2015-12-01', '2015-12-01'), ('2015-12-01', '2016-03-01')]
+[('2016-03-01', '2016-03-01'), ('2016-03-01', '2016-04-01')]
+Procedure with weights: 0.2
+[('2014-06-01', '2014-06-01'), ('2014-06-01', '2014-09-01')]
+[('2014-09-01', '2014-09-01'), ('2014-09-01', '2014-12-01')]
+[('2014-12-01', '2014-12-01'), ('2014-12-01', '2015-03-01')]
+[('2015-03-01', '2015-03-01'), ('2015-03-01', '2015-06-01')]
+[('2015-06-01', '2015-06-01'), ('2015-06-01', '2015-09-01')]
+[('2015-09-01', '2015-09-01'), ('2015-09-01', '2015-12-01')]
+[('2015-12-01', '2015-12-01'), ('2015-12-01', '2016-03-01')]
+[('2016-03-01', '2016-03-01'), ('2016-03-01', '2016-04-01')]
+Procedure with weights: 0.1
+[('2014-06-01', '2014-06-01'), ('2014-06-01', '2014-09-01')]
+[('2014-09-01', '2014-09-01'), ('2014-09-01', '2014-12-01')]
+[('2014-12-01', '2014-12-01'), ('2014-12-01', '2015-03-01')]
+[('2015-03-01', '2015-03-01'), ('2015-03-01', '2015-06-01')]
+[('2015-06-01', '2015-06-01'), ('2015-06-01', '2015-09-01')]
+[('2015-09-01', '2015-09-01'), ('2015-09-01', '2015-12-01')]
+[('2015-12-01', '2015-12-01'), ('2015-12-01', '2016-03-01')]
+[('2016-03-01', '2016-03-01'), ('2016-03-01', '2016-04-01')]
+Procedure with weights: 0.01
+[('2014-06-01', '2014-06-01'), ('2014-06-01', '2014-09-01')]
+[('2014-09-01', '2014-09-01'), ('2014-09-01', '2014-12-01')]
+[('2014-12-01', '2014-12-01'), ('2014-12-01', '2015-03-01')]
+[('2015-03-01', '2015-03-01'), ('2015-03-01', '2015-06-01')]
+[('2015-06-01', '2015-06-01'), ('2015-06-01', '2015-09-01')]
+[('2015-09-01', '2015-09-01'), ('2015-09-01', '2015-12-01')]
+[('2015-12-01', '2015-12-01'), ('2015-12-01', '2016-03-01')]
+[('2016-03-01', '2016-03-01'), ('2016-03-01', '2016-04-01')]
+[01;32mdhananja@ip-10-0-1-114[00m:[01;34m~/peeps-chili/nature_machine_intelligence_2021/housing_saffety[00m$ [01;32mdhananja@ip-10-0-1-114[00m:[01;34m~/peeps-chili/nature_machine_intelligence_2021/housing_saffety[00m$ vim DJ*.py
+[?2004h[?1049h[22;0;0t[?1h=[?2004h[1;24r[?12h[?12l[27m[29m[m[H[2J[?25l[24;1H"DJRecallAdjuster.py" 552L, 23932C[2;1H▽[6n[2;1H  [1;1H[>c]10;?]11;?[1;1H[35mimport[m pandas [38;5;130mas[m pd
+[35mimport[m numpy [38;5;130mas[m np
+[35mimport[m statsmodels.api [38;5;130mas[m sm
+[35mimport[m statsmodels.formula.api [38;5;130mas[m smf
+
+[35mimport[m os
+[35mimport[m warnings
+[35mimport[m yaml
+[35mimport[m sqlalchemy
+
+
+[35mfrom[m itertools [35mimport[m permutations
+[35mfrom[m jinja2 [35mimport[m Template
+[35mimport[m dateparser
+[35mimport[m string
+
+[35mfrom[m ohio.ext.numpy [35mimport[m pg_copy_to_table
+
+[38;5;130mtry[m:
+    [35mimport[m matplotlib.pyplot [38;5;130mas[m plt
+[38;5;130mexcept[m ([32mImportError[m, [32mRuntimeError[m) [38;5;130mas[m e:
+    [36mprint[m([31m"matplotlib import error -- you are likely using the terminal, so plott[23;1H() functions will not be available"[m)[24;63H1,1[11CTop[1;1H[?25h[?25l[24;53H~@k[1;1H[24;53H   [2;1H[24;63H2[2;1H[?25h[?25l[24;53H~@ý[2;1H[24;53H   [6;1H[27m[29m[m[H[2J[1;1H[38;5;130mexcept[m ([32mImportError[m, [32mRuntimeError[m) [38;5;130mas[m e:
+    [36mprint[m([31m"matplotlib import error -- you are likely using the terminal, so plott[3;1H() functions will not be available"[m)
+    [38;5;130mpass[m
+
+
+ENTITY_DEMO_FILES = {
+    [31m'joco'[m: {[9;9H[31m'sql_tmpl'[m: [31m'joco_entity_demos.sql.tmpl'[m,[10;9H[31m'check_sql'[m: [31m"""
+            WITH all_matches AS (
+                SELECT COUNT(DISTINCT ((mg.model_config->'matchdatetime')::VARCHH[13;1HAR)::TIMESTAMP) AS num_match
+                FROM tmp_bias_models
+                JOIN model_metadata.model_groups mg USING(model_group_id)
+            )
+            SELECT num_match = 1 AS pass_check
+            FROM all_matches
+        """[m[20;9H}
+}[24;63H25,0-1[9C3%[6;1H[?25h[?25l[24;53H~@ý[6;1H[24;53H   [6;9H[27m[29m[m[H[2J[4;1H[38;5;130mclass[m [36mRecallAdjuster[m([36mobject[m):
+    [38;5;130mdef[m [36m__init__[m([6;9Hself,[7;9Hengine,[8;9Hparams,[9;9Hpause_phases=[36mFalse[m,[10;9Hexhaustive=[36mFalse[m):[11;9H[31m"""
+        Arguments:
+            engine: 
+                An engine for a postgres database
+            params:
+                Dictionary with following properly defined
+                pg_role:
+                    Role to use in postgres
+                schema:
+                    Schema for table creation
+                experiment_hashes:
+                    A list of strings with triage experiments to include
+                date_pairs:[m[24;63H45,9[11C7%[6;9H[?25h[?25l[24;53H~@ý[6;9H[24;53H   [7;17H[27m[29m[m[H[2J[1;1H[31m                    A list of strings with triage experiments to include
+                date_pairs:
+                    A list of tuples of train_end_times (as strings). The first  [4;1Hshould be the date to use
+                    to make adjustments and the second a future date for evaluatt[6;1Hion.
+                list_sizes:
+                    A list of integers, the sizes of lists to generate.
+                entity_demos:
+                    Either a table name (in format "schema.table_name") or "jocoo[11;1H" to use
+                    JoCo-specific code to create this table on the fly.
+                demo_col:
+                    Column name containing demographic data on which to make adjj[15;1Hustments
+                sample_weights:
+                    Optional dictionary of demo values to weight for subsamplingg[18;1H. Excluded demo values
+                    will be included in their entirely with no sampling. Weightss[20;1H should be a value
+                    between 0 and 1.0, reflecting the fraction of that demographh[22;1Hic to include.
+                decoupled_experiments:[m[24;63H65,17[9C11%[7;17H[?25h[?25l[24;53H~@ý[7;17H[24;53H   [6;21H[27m[29m[m[H[2J[1;1H[31m                    between 0 and 1.0, reflecting the fraction of that demographh[2;1Hic to include.
+                decoupled_experiments:
+                    Optional list of tuples of (experiment_hash, demo_value) thaa[5;1Ht identify decoupled
+                    experiments with models run using data only from each subgroo[7;1Hup. Data from these
+                    experiments will be used only to create a composite that alll[9;1Hows EITHER the decoupled
+                    or full models to be used for each subgroup. Multiple experii[11;1Hments can be specified
+                    for a given demo_value, but all demo_values must be includedd[13;1H.
+                decoupled_entity_demos:
+                    Optional "schema.table_name" for a separate entity_demos tabb[16;1Hle to be used for the decoupled
+                    experiments, for instance in cases where entity_ids may difff[18;1Her between modeling runs
+                    such as is the case with JoCo matches. If specified, must bee[20;1H pre-computed.
+                entity_demos:
+                    e.g: {working_schema}.entity_demos
+                weights:[m[24;63H78,21[9C13%[6;21H[?25h[?25l[24;53H~@ý[6;21H[24;53H   [6;17H[27m[29m[m[H[2J[1;1H[31m                    e.g: {working_schema}.entity_demos
+                weights:
+                    Weighting scheme for multi adjustment as a list of fractions[4;1H                date_list:
+                    List of all dates in increasing order
+                min_separations:
+                    The minimum time we must go back given a future_train_end_tii[8;1Hme to know we have that data and label set at prediction time of future_train_enn[9;1Hd_time. If not stated we assume 2
+            pause_phases:
+                True if you want a break after each phase requiring user input tt[12;1Ho continue
+            exhaustive:
+                Runs bias adjustment with group_k +- 50 on both sides to measuree[15;1H stability of results to adjustment thresholds
+        """[m[18;9H[34m# store parameters[m[19;9Hself.engine = engine.connect()[20;9Hself.params = params[22;9Hself.params[[31m'date_weights'[m] = self.get_date_weights()[23;9Hself.params[[31m'date_weight_case_str'[m] = self.get_weight_case_str()[24;63H92,17[9C16%[6;17H[?25h[?25l[24;53H~@ý[6;17H[24;53H   [6;1H[27m[29m[m[H[2J[1;9Hself.params[[31m'date_weights'[m] = self.get_date_weights()[2;9Hself.params[[31m'date_weight_case_str'[m] = self.get_weight_case_str()[3;9Hself.params[[31m'date_weight_past_train_end_time_case_str'[m] = self.get_weighh[4;1Ht_past_train_end_time_case_str()[7;9H[34m# check consistency of date pairs[m[8;9Hself.validate_dates()[10;9H[34m# create a few temporary tables we'll need for calculations[m[11;9Hsql = Template([36mopen[m([31m'recall_adjustment_verbose_pre.sql.tmpl'[m, [31m'r'[m).read(([12;1H)).render(**self.params)[13;9Hself.engine.execute(sql)[14;9Hself.engine.execute([31m"COMMIT"[m)[16;9H[38;5;130mif[m pause_phases:[17;13H[36minput[m(f[31m"Date Pair: {self.params['date_pairs']} pre sql done"[m)[19;9Hentity_demos = self.params[[31m'entity_demos'[m][20;9H[38;5;130mif[m entity_demos.find([31m'.'[m) > -[31m1[m:[21;13Hself.params[[31m'entity_demos'[m] = entity_demos[22;9H[38;5;130melif[m entity_demos [38;5;130min[m ENTITY_DEMO_FILES.keys():[23;13Hself.params[[31m'entity_demos'[m] = self.create_entity_demos(entity_demos)[24;63H108,0-1[7C19%[6;1H[?25h[?25l[24;53H~@ý[6;1H[24;53H   [6;1H[27m[29m[m[H[2J[1;9H[38;5;130melif[m entity_demos [38;5;130min[m ENTITY_DEMO_FILES.keys():[2;13Hself.params[[31m'entity_demos'[m] = self.create_entity_demos(entity_demos)[3;9H[38;5;130melse[m:[4;13H[38;5;130mraise[m [32mValueError[m([31m'Error: entity_demos must be either `schema.table_nn[5;1Hame` OR one of (%s)'[m % [31m', '[m.join(ENTITY_DEMO_FILES.keys()))[7;9H[34m# calculate demo values for general use, ordered by frequency[m[8;9Hsql = [31m"SELECT %s, COUNT(*) AS num FROM %s GROUP BY 1 ORDER BY 2 DESC"[m %  [9;1H(self.params[[31m'demo_col'[m], self.params[[31m'entity_demos'[m])[10;9Hres = self.engine.execute(sql).fetchall()[11;9Hself.params[[31m'demo_values'[m] = [r[[31m0[m] [38;5;130mfor[m r [38;5;130min[m res][12;9Hself.params[[31m'demo_permutations'[m] = [36mlist[m(permutations(self.params[[31m'demo_vv[13;1Halues'[m], [31m2[m))[16;9H[34m# pre-calculate the results for all models, date pairs[m[17;9H[38;5;130mif[m [38;5;130mnot[m exhaustive:[18;13Hsql = Template([36mopen[m([31m'recall_adjustment_verbose.sql.tmpl'[m, [31m'r'[m).read(([19;1H)).render(**self.params)[20;9H[38;5;130melse[m:[21;13Hsql = Template([36mopen[m([31m'recall_adjustment_exhaustive.sql.tmpl'[m, [31m'r'[m).ree[22;1Had()).render(**self.params)[23;9Hself.engine.execute(sql)[24;63H127,0-1[7C22%[6;1H[?25h[?25l[24;53H~@ý[6;1H[24;53H   [6;9H[27m[29m[m[H[2J[1;13Hsql = Template([36mopen[m([31m'recall_adjustment_exhaustive.sql.tmpl'[m, [31m'r'[m).ree[2;1Had()).render(**self.params)[3;9Hself.engine.execute(sql)[4;9Hself.engine.execute([31m"COMMIT"[m)[6;9H[38;5;130mif[m pause_phases:[7;13H[36minput[m(f[31m"Date Pair: {self.params['date_pairs']} Adjustment Done"[m)[9;9H[34m# store the results to dataframes for subsequent plotting and analysis[m[10;9Hsql = [31m'SELECT * FROM %s.model_adjustment_results_%s'[m % (self.params[[31m'schh[11;1Hema'[m], self.params[[31m'demo_col'[m])[12;9Hself.adjustment_results = pd.read_sql(sql, self.engine)[15;9Hself.engine.close()[18;5H[38;5;130mdef[m [36mget_date_weights[m(self):[19;9Hweights = self.params[[31m'weights'[m][20;9Hdate_list = self.params[[31m'date_list'[m][21;9Hmin_separation = self.params.get([31m'min_separations'[m, [31m1[m)[22;9Hdate_weights = {}[23;9Hi_lim = [36mlen[m(weights)[24;63H143,9[9C25%[6;9H[?25h[?25l[24;53H~@ý[6;9H[24;53H   [6;17H[27m[29m[m[H[2J[1;9Hdate_weights = {}[2;9Hi_lim = [36mlen[m(weights)[3;9H[38;5;130massert[m i_lim >= min_separation[4;9H[38;5;130mfor[m i, date [38;5;130min[m [36menumerate[m(date_list):[5;13H[38;5;130mif[m i < i_lim + min_separation - [31m1[m:[6;17Hdate_weights[date] = {date_list[[31m0[m]: [31m1.0[m, [31m"past_train_end_time"[m:  [7;1Hdate_list[[31m0[m]}[8;13H[38;5;130melse[m:[9;17Hbase = i - min_separation [34m# No matter what latest time we can uss[10;1He is 2 before current month[m[11;17Hd = {}[12;17H[38;5;130mfor[m j [38;5;130min[m [36mrange[m([36mlen[m(weights)):[13;21Hd[date_list[base - j]] = weights[j][14;17Hd[[31m"past_train_end_time"[m] = date_list[base] [34m# Should be the most  [15;1Hrecent date used to compute adjustment[m[16;17Hdate_weights[date] = d[17;9H[38;5;130mreturn[m date_weights[21;5H[38;5;130mdef[m [36mget_weight_past_train_end_time_case_str[m(self):[22;9Hdate_weights = self.params[[31m'date_weights'[m][23;9Hdate_list = self.params[[31m'date_list'[m][24;63H163,17[8C29%[6;17H[?25h[?25l[24;53H~@ý[6;17H[24;53H   [6;9H[27m[29m[m[H[2J[1;9Hdate_weights = self.params[[31m'date_weights'[m][2;9Hdate_list = self.params[[31m'date_list'[m][3;9H[38;5;130mif[m [36mlen[m(date_weights) == [31m0[m:[4;13H[38;5;130mreturn[m f[31m"'{date_list[0]}'::TIMESTAMP"[m[5;9Hs = [31m"CASE"[m[6;9H[38;5;130mfor[m future_train_end_time [38;5;130min[m date_weights:[7;13Hpast_train_end_time = date_weights[future_train_end_time][[31m"past_traii[8;1Hn_end_time"[m][9;13Hs += f[31m" WHEN future_train_end_time = '{future_train_end_time}' THEN  [10;1H'{past_train_end_time}'::TIMESTAMP"[m[11;9Hs += f[31m" ELSE '{date_list[0]}'::TIMESTAMP END"[m[12;9H[38;5;130mreturn[m s[14;5H[38;5;130mdef[m [36mget_weight_case_str[m(self):[15;9Hdate_weights = self.params[[31m'date_weights'[m][16;9H[38;5;130mif[m [36mlen[m(date_weights) == [31m0[m:[17;13H[38;5;130mreturn[m [31m"0"[m[18;9Hs = [31m"CASE"[m[19;9H[38;5;130mfor[m future_train_end_time [38;5;130min[m date_weights:[20;13H[38;5;130mfor[m train_end_time [38;5;130min[m date_weights[future_train_end_time]:[21;17H[38;5;130mif[m train_end_time == [31m"past_train_end_time"[m:[22;21H[38;5;130mpass[23;17Helse[m:[24;63H181,9[9C32%[6;9H[?25h[?25l[24;53H~@ý[6;9H[24;53H   [6;9H[27m[29m[m[H[2J[1;21H[38;5;130mpass[2;17Helse[m:[3;21Hw = date_weights[future_train_end_time][train_end_time][4;21Hs += f[31m" WHEN future_train_end_time = '{future_train_end_timee[5;1H}' AND train_end_time = '{train_end_time}' THEN {w} "[m[6;9Hs += [31m"ELSE 0 END"[m[7;9H[38;5;130mreturn[m s[10;5H[38;5;130mdef[m [36mensure_all_demos[m(self, check_demos):[11;9Hall_demos = [36mset[m(self.params[[31m'demo_values'[m])[12;9Hcheck_demos = [36mset[m(check_demos)[13;9H[38;5;130mif[m all_demos - check_demos:[14;13H[38;5;130mraise[m [32mValueError[m([31m'Error: demo values not found in decoupled_experimee[15;1Hnts - %s'[m % (all_demos - check_demos))[16;9H[38;5;130mif[m check_demos - all_demos:[17;13H[38;5;130mraise[m [32mValueError[m([31m'Error: demo values specified in decoupled_experimee[18;1Hnts not found in data - '[m % (check_demos - all_demos))[21;5H[38;5;130mdef[m [36mvalidate_dates[m(self):[22;9H[38;5;130mwith[m warnings.catch_warnings():[23;13Hwarnings.simplefilter([31m"ignore"[m)[24;63H199,9[9C36%[6;9H[?25h[?25l[24;53H~@ý[6;9H[24;53H   [7;1H[27m[29m[m[H[2J[1;9H[38;5;130mwith[m warnings.catch_warnings():[2;13Hwarnings.simplefilter([31m"ignore"[m)[3;13H[38;5;130mfor[m past, future [38;5;130min[m self.params[[31m'date_pairs'[m]:[4;17H[38;5;130mif[m dateparser.parse(past) > dateparser.parse(future):[5;21H[38;5;130mraise[m [32mValueError[m([31m'Error! Cannot validate on the past. %s shoo[6;1Huld be no earlier than %s.'[m % (future, past))[9;5H[38;5;130mdef[m [36mdo_bootstrap[m(self):[10;9H[34m# [m[30m[103mFIXME[m[34m: Right now bootstrap sampling relies on duplicate entity_id valuu[11;1Hes in tmp_bias_sample[12;9H#        not creating downstream issues. This should be true currently,  [13;1Hbut is a bit of a[14;9H#        risky assumption should someone change downstream code to eithee[15;1Hr de-dupe on entity[16;9H#        or potentially introduce dupes elsewhere that could result in aa[17;1H many-to-many join...[m[18;9Hself.engine.execute([31m"DROP TABLE IF EXISTS tmp_bias_sample;"[m)[19;9Hself.engine.execute([31m"""
+            CREATE LOCAL TEMPORARY TABLE tmp_bias_sample (
+                    entity_id INT,
+                    as_of_date DATE
+                ) ON COMMIT PRESERVE ROWS;[m[24;63H218,0-1[7C39%[7;1H[?25h[?25l[24;53H~@ý[7;1H[24;53H   [6;9H[27m[29m[m[H[2J[1;1H[31m                    as_of_date DATE
+                ) ON COMMIT PRESERVE ROWS;
+            """[m)[4;9Hself.engine.execute([31m"COMMIT;"[m)[6;9H[34m# gross nested for loop that could probably be done away with, but sizess[7;1H should be pretty small, so meh...[m[8;9H[38;5;130mfor[m as_of_date [38;5;130min[m [36mset[m([dt [38;5;130mfor[m dt_pair [38;5;130min[m self.params[[31m'date_pairs'[m] [38;5;130mfor[m dd[9;1Ht [38;5;130min[m dt_pair]):[10;13Htot_size = self.engine.execute([31m"SELECT COUNT(DISTINCT entity_id) FROO[11;1HM %s WHERE as_of_date='%s'::DATE"[m % (self.params[[31m'entity_demos'[m], as_of_date)).ff[12;1Hetchall()[[31m0[m][[31m0[m][13;13H[38;5;130mfor[m demo_value, demo_frac [38;5;130min[m self.params[[31m'bootstrap_weights'[m].items(([14;1H):[15;17Hdemo_size = [36mround[m(tot_size*demo_frac)[16;17Hall_entities = self.engine.execute([31m"""
+                    SELECT DISTINCT entity_id
+                    FROM {entity_demos}
+                    WHERE {demo_col} = '{demo_value}'
+                        AND as_of_date = '{as_of_date}'::DATE
+                    ;
+                    """[m.format([23;25Hentity_demos=self.params[[31m'entity_demos'[m],[24;63H234,9[9C42%[6;9H[?25h[?25l[24;53H~@ý[6;9H[24;53H   [6;25H[1;21H[31m"""[m.format[106m([m[1;32H[K[2;1H                        entity_demos=self.params[[31m'entity_demos'[m],
+                [8Cdemo_col=self.params[[31m'demo_col'[m],[4;9H                demo_value=demo_value,[5;25Has_of_date=as_of_date[6;9H                [106m)[m)[6;27H[K[7;1H                all_entities = np.array([row[[31m0[m] [38;5;130mfor[m row [38;5;130min[m all_entities])[8;9H        bs_entities = np.random.choice(all_entities, size=demo_size, repp[9;1Hlace=[36mTrue[m)[9;11H[K[10;13H    bs_entities = np.array([[e, as_of_date] [38;5;130mfor[m e [38;5;130min[m bs_entities])[10;79H[K[11;1H                pg_copy_to_table(bs_entities, [31m'tmp_bias_sample[m[1C, self.engine, coo[12;1Hlumns=[[31m'entity_id'[m, [31m'as_of_date'[m], fmt=([31m'%s'[m, [31m'%s'[m))[13;13H    self.engine.execute([31m"COMMIT;"[m)[13;47H[K[14;1H        self.engine.execute([31m"CREATE INDEX ON tmp_bias_sample(entity_id, as_of_daa[15;1Hte);"[m)[15;17H[K[16;17H[K[17;1H[K[18;1H    [38;5;130mdef[m [36mcreate_entity_demos[m(self, entity_demos):
+        sql_file = ENTITY_DEMO_FILES[entity_demos][[31m'sql_tmpl'[m]
+        sql = Template([36mopen[m(sql_file, [31m'r'[m).read()).render(**self.params)
+        self.engine.execute(sql)
+        self.engine.execute([31m"COMMIT"[m)[23;25H[K[24;64H50,25[9C5[6;25H[?25h[?25l[24;53H~@ý[6;25H[24;53H   [6;13H[27m[29m[m[H[2J[1;9Hself.engine.execute([31m"COMMIT"[m)[3;9H[34m# consistency check:[m[4;9Hcheck_sql = ENTITY_DEMO_FILES[entity_demos][[31m'check_sql'[m][5;9H[38;5;130mif[m [38;5;130mnot[m self.engine.execute(check_sql).fetchall()[[31m0[m][[31m0[m]:[6;13H[38;5;130mraise[m [32mRuntimeError[m([31m'Entity Demos failed consistency check:[m[35m\n[m[31m %s'[m % cc[7;1Hheck_sql)[9;9H[38;5;130mreturn[m [31m'%s.entity_demos'[m % self.params[[31m'schema'[m][12;5H[38;5;130mdef[m [36mplot[m([13;9Hself,[14;9Hplot_type=[31m'shift'[m,[15;9Hrecall_ratio=[31m'largest'[m,[16;9Hdate_pair=[36mNone[m,[17;9Hlist_size=[36mNone[m,[18;9Hmetric=[31m'precision@'[m,[19;9Hax=[36mNone[m[20;9H):[21;9H[31m"""
+        Arguments:
+            plot_type:[m[24;63H268,13[8C49%[6;13H[?25h[?25l[24;53H~@ý[6;13H[24;53H   [7;17H[27m[29m[m[H[2J[1;1H[31m        Arguments:
+            plot_type:
+                One of `before`, `after`, `shift` (default)
+            recall_ratio:
+                May be `largest` (default) to plot against the largest recall raa[6;1Htio, `all_demos` to plot
+                all pairwise ratios across demo values, or `{demo1}_to_{demo2}`  [8;1Hto plot a
+                spefic ratio between two given demo values
+            date_pair:
+                The tuple representing the past and future train_end_times to uss[12;1He for the plot
+                If not specified, the latest pair will be used
+            list_size:
+                The list size to use for plotting (If unspecified, the largest vv[16;1Halue will be used)
+            metric:
+                The metric for plotting, currently only 'precision@' is supportee[19;1Hd
+            ax:
+                Optionally pass an axes object for the plot to use
+        Returns:
+            ax_dict:[m[24;63H288,17[8C52%[7;17H[?25h[?25l[24;53H~@ý[7;17H[24;53H   [6;9H[27m[29m[m[H[2J[1;1H[31m        Returns:
+            ax_dict:
+                Dictionary mapping recall_ratio to the axis used by the plot, too[4;1H allow further
+                modification of display parameters
+        """[m[8;9H[34m# [m[30m[103mFIXME[m[34m: remove print statements in favor of labels on the figures![m[10;9H[38;5;130mif[m date_pair [38;5;130mis[m [36mNone[m:[11;13Hdate_pair = [36msorted[m(self.params[[31m'date_pairs'[m], key=[38;5;130mlambda[m x: (x[[31m1[m], xx[12;1H[[31m0[m]), reverse=[36mTrue[m)[[31m0[m][14;9H[38;5;130mif[m list_size [38;5;130mis[m [36mNone[m:[15;13Hlist_size = [36msorted[m(self.params[[31m'list_sizes'[m], reverse=[36mTrue[m)[[31m0[m][17;9H[38;5;130mif[m metric != [31m'precision@'[m:[18;13H[38;5;130mreturn[m [32mValueError[m([31m"Currently `precision@` is the only supported metrr[19;1Hic!"[m)[21;9H[38;5;130mif[m recall_ratio == [31m'all_demos'[m:[22;13H[34m# just print these once...[m[23;13H[36mprint[m([31m"Date Pair: %s"[m % [36mstr[m(date_pair))[24;63H303,9[9C56%[6;9H[?25h[?25l[24;53H~@ý[6;9H[24;53H   [6;13H[27m[29m[m[H[2J[1;13H[34m# just print these once...[m[2;13H[36mprint[m([31m"Date Pair: %s"[m % [36mstr[m(date_pair))[3;13H[36mprint[m([31m"List Size: %s"[m % list_size)[4;13H[36mprint[m([31m"Metric: %s%s_abs"[m % (metric, list_size))[6;13H[34m# [m[30m[103mTODO[m[34m: Could probably make these a small multiples grid?[m[7;13Hax_dict = {}[8;13H[34m# set up a figure for the plots[m[9;13Hnum_plots = [36mlen[m(self.params[[31m'demo_permutations'[m])[10;13Hfigsize = plt.rcParams[[31m'figure.figsize'[m].copy()[11;13Hfigsize[[31m1[m] = figsize[[31m1[m]*num_plots[12;13H_, ax = plt.subplots(num_plots, [31m1[m, sharex=[36mFalse[m, sharey=[36mFalse[m, figsii[13;1Hze=figsize)[15;13H[38;5;130mfor[m i, (demo1, demo2) [38;5;130min[m [36menumerate[m(self.params[[31m'demo_permutations'[m]))[16;1H:[17;17Hrecall_ratio = [31m'%s_to_%s'[m % (demo1, demo2)[18;17Hax_dict.update(self.plot(plot_type, recall_ratio, date_pair, liss[19;1Ht_size, metric, ax=ax[i]))[20;13Hplt.tight_layout(h_pad=[31m1.1[m, w_pad=[31m1.1[m)[21;13H[38;5;130mreturn[m ax_dict[23;9H[38;5;130melif[m recall_ratio == [31m'largest'[m:[24;63H322,13[8C59%[6;13H[?25h[?25l[24;53H~@ý[6;13H[24;53H   [6;9H[27m[29m[m[H[2J[2;9H[38;5;130melif[m recall_ratio == [31m'largest'[m:[3;13Hplot_ratio = [31m'max_recall_ratio'[m[4;13Hylabel = [31m'largest recall ratio'[m[6;9H[38;5;130melse[m:[7;13Hplot_ratio = ([31m'recall_%s'[m % recall_ratio).lower()[8;13Hylabel = [31m'recall ratio: %s'[m % recall_ratio.replace([31m'_to_'[m, [31m'/'[m)[10;9H[38;5;130mif[m plot_type == [31m'shift'[m:[11;13Hplot_title = [31m'Equity and Efficiency Movement'[m[12;9H[38;5;130melif[m plot_type == [31m'after'[m:[13;13Hplot_title = [31m'Equity and Efficiency After Adjustment'[m[14;9H[38;5;130melif[m plot_type == [31m'before'[m:[15;13Hplot_title = [31m'Equity and Efficiency Before Adjustment'[m[17;9H[38;5;130mif[m ax [38;5;130mis[m [38;5;130mnot[m [36mNone[m:[18;13Hplt.sca(ax)[19;9H[38;5;130melse[m:[20;13H[36mprint[m([31m"Date Pair: %s"[m % [36mstr[m(date_pair))[21;13H[36mprint[m([31m"List Size: %s"[m % list_size)[22;13H[36mprint[m([31m"Metric: %s%s_abs"[m % (metric, list_size))[23;13H_, ax = plt.subplots()[24;63H340,9[9C63%[6;9H[?25h[?25l[24;53H~@ý[6;9H[24;53H   [6;13H[27m[29m[m[H[2J[1;13H[36mprint[m([31m"Metric: %s%s_abs"[m % (metric, list_size))[2;13H_, ax = plt.subplots()[4;9H[34m# subset the adjustment results dataframe to the current parameters[m[5;9Hsub_df = self.adjustment_results.loc[[6;13H[106m([mself.adjustment_results[[31m'list_size'[m] == list_size[106m)[m[7;13H&[8;13H(self.adjustment_results[[31m'metric'[m] == metric)[9;13H&[10;13H(self.adjustment_results[[31m'train_end_time'[m] == dateparser.parse(date__[11;1Hpair[[31m1[m]))[12;13H&[13;13H(self.adjustment_results[[31m'past_train_end_time'[m] == dateparser.parse(([14;1Hdate_pair[[31m0[m]))[15;9H,[16;9H[[31m'base_value'[m, [31m'base_%s'[m % plot_ratio, [31m'adj_value'[m, [31m'adj_%s'[m % plot_ratii[17;1Ho][18;9H][20;9Hylim = [31m1.1[m*[36mmax[m([21;13Hsub_df[[31m'base_%s'[m % plot_ratio].max(),[22;13Hsub_df[[31m'adj_%s'[m % plot_ratio].max(),[23;13H[31m1.0[m[24;63H361,13[8C66%[6;13H[?25h[?25l[24;53H~@ý[6;13H[24;53H   [6;13H[27m[29m[m[H[2J[1;13Hsub_df[[31m'adj_%s'[m % plot_ratio].max(),[2;13H[31m1.0[m[3;13H)[5;9Hxmin = [31m0.8[m*[36mmin[m([6;13Hsub_df[[31m'base_value'[m].min(),[7;13Hsub_df[[31m'adj_value'[m].min()[8;13H)[9;9Hxmax = [31m1.1[m*[36mmax[m([10;13Hsub_df[[31m'base_value'[m].max(),[11;13Hsub_df[[31m'adj_value'[m].max()[12;13H)[14;9Harr = sub_df.values[16;9H[34m# plot a reference line at y = 1 and the desired points[m[17;9Hplt.plot(([31m0[m,[31m1[m),([31m1[m,[31m1[m),[31m'k-'[m, zorder=[31m0[m)[18;9H[38;5;130mfor[m x0, y0, x1, y1 [38;5;130min[m arr:[19;13H[38;5;130mif[m plot_type == [31m'shift'[m:[20;17Hplt.plot((x0,x1), (y0,y1), [31m'k-'[m, alpha=[31m0.5[m)[21;13H[38;5;130mif[m plot_type [38;5;130min[m ([31m'before'[m, [31m'shift'[m):[22;17Hplt.plot(x0, y0, color=[31m'C0'[m, marker=[31m'o'[m)[23;13H[38;5;130mif[m plot_type [38;5;130min[m ([31m'after'[m, [31m'shift'[m):[24;63H379,13[8C70%[6;13H[?25h[?25l[24;53H~@ý[6;13H[24;53H   [6;9H[27m[29m[m[H[2J[1;17Hplt.plot(x0, y0, color=[31m'C0'[m, marker=[31m'o'[m)[2;13H[38;5;130mif[m plot_type [38;5;130min[m ([31m'after'[m, [31m'shift'[m):[3;17Hplt.plot(x1, y1, color=[31m'C1'[m, marker=[31m'o'[m)[5;9H[34m# For after and shift plots, add the composite point as a red diamond[m[6;9H[38;5;130mif[m plot_type [38;5;130min[m ([31m'after'[m, [31m'shift'[m):[8;13Hcomp_arr = self.composite_results.loc[[9;17H(self.composite_results[[31m'list_size'[m] == list_size)[10;17H&[11;17H(self.composite_results[[31m'metric'[m] == metric)[12;17H&[13;17H(self.composite_results[[31m'train_end_time'[m] == dateparser.parse(daa[14;1Hte_pair[[31m1[m]))[15;17H&[16;17H(self.composite_results[[31m'past_train_end_time'[m] == dateparser.parr[17;1Hse(date_pair[[31m0[m]))[18;13H,[19;13H[[31m'value'[m, plot_ratio][20;13H].values[22;13H[38;5;130mif[m [36mlen[m(comp_arr) > [31m1[m:[23;17H[38;5;130mraise[m [32mValueError[m([31m"Uniqueness error! Check composite results for [m[23;1H[94m@@@                                                                             [m[24;63H400,9[9C74%[6;9H[?25h[?25l[24;53H~@ý[6;9H[24;53H   [6;13H[27m[29m[m[H[2J[2;13H[38;5;130mif[m [36mlen[m(comp_arr) > [31m1[m:[3;17H[38;5;130mraise[m [32mValueError[m([31m"Uniqueness error! Check composite results for  [4;1Hduplicate results."[m)[6;13Hplt.plot(comp_arr[[31m0[m][[31m0[m], comp_arr[[31m0[m][[31m1[m], marker=[31m'D'[m, color=[31m'red'[m, maa[7;1Hrkersize=[31m7[m)[9;9Hax = plt.gca()[10;9Hax.set_xlim((xmin, xmax))[11;9Hax.set_ylim(([31m0.0[m, ylim))[12;9Hax.set_xlabel([31m'%s%s_abs'[m % (metric, list_size))[13;9Hax.set_ylabel(ylabel)[14;9Hax.set_title(plot_title)[16;9H[34m# plt.show()[m[18;9H[38;5;130mreturn[m {recall_ratio: ax}
+
+
+[38;5;130mdef[m [36mra_procedure[m(weights=[[31m0.99[m, [31m0.01[m], demo_col=[31m"median_income"[m, working_schema==[22;1H[31m"kit_bias_adj"[m, results_schema=[31m"bias_results"[m, list_size=[31m500[m, alternate_save_namm[23;1Hes=[], engine_donors=[36mNone[m, config=[36mNone[m, pause_phases=[36mFalse[m, exhaustive=[36mFalse[m):[24;63H417,13[8C77%[6;13H[?25h[?25l[24;53H~@ý[6;13H[24;53H   [6;9H[1;23r[1;1H[19M[1;24r[5;5H[38;5;130mif[m engine_donors [38;5;130mis[m [36mNone[m [38;5;130mor[m config [38;5;130mis[m [36mNone[m:[6;9H[38;5;130mwith[m [36mopen[m([31m'../../config/db_default_profile.yaml'[m) [38;5;130mas[m fd:[7;13Hconfig = yaml.full_load(fd)[8;13Hdburl = sqlalchemy.engine.url.URL.create([9;17H[31m"postgresql"[m,[10;17Hhost=config[[31m"host"[m],[11;17Husername=config[[31m"user"[m],[12;17Hdatabase=[31m"san_jose_housing_triage"[m,[13;17Hpassword=config[[31m"pass"[m],[14;17Hport=config[[31m"port"[m],[15;13H)[16;13Hengine_donors = sqlalchemy.create_engine(dburl, poolclass=sqlalchemyy[17;1H.pool.QueuePool)[19;5Hengine_donors.execute(f[31m'TRUNCATE TABLE {results_schema}.model_adjustment_ress[20;1Hults_{demo_col};'[m)
+    engine_donors.execute(f[31m'TRUNCATE TABLE {working_schema}.model_adjustment_groo[22;1Hup_k_{demo_col};'[m)
+    [38;5;130mif[m exhaustive:[24;63H[K[24;63H433,9[9C80%[6;9H[?25h[?25l[24;53H~@ý[6;9H[24;53H   [7;8H[27m[29m[m[H[2J[1;5Hengine_donors.execute(f[31m'TRUNCATE TABLE {working_schema}.model_adjustment_groo[2;1Hup_k_{demo_col};'[m)
+    [38;5;130mif[m exhaustive:[4;9H[38;5;130mfor[m al [38;5;130min[m string.ascii_lowercase[:[31m10[m]:[5;13Hengine_donors.execute(f[31m'TRUNCATE TABLE {results_schema}.exhaustive_{{[6;1Hal};'[m)[8;5Hengine_donors.execute([31m'COMMIT;'[m)[11;5Hdate_list = [[31m"2014-06-01"[m, [31m"2014-09-01"[m, [31m"2014-12-01"[m, [31m"2015-03-01"[m, [31m"2015-00[12;1H6-01"[m, [31m"2015-09-01"[m, [31m"2015-12-01"[m, [31m"2016-03-01"[m, [31m'2016-04-01'[m][14;5Hdate_pairs_all = []
+    [38;5;130mfor[m i, d [38;5;130min[m [36menumerate[m(date_list[:-[31m1[m]):[16;9Hdate_pairs_all.append((date_list[i], date_list[i]))[17;9Hdate_pairs_all.append((date_list[i], date_list[i+[31m1[m]))[20;5H[38;5;130mfor[m dp_idx [38;5;130min[m [36mrange[m([31m0[m, [36mlen[m(date_pairs_all), [31m2[m):[21;9Hdate_pairs = [ date_pairs_all[dp_idx], date_pairs_all[dp_idx+[31m1[m] ][22;9H[36mprint[m(date_pairs)[23;9Hparams = {}[24;63H450,8[9C83%[7;8H[?25h[?25l[24;53H~@ý[7;8H[24;53H   [6;9H[27m[29m[m[H[2J[1;9H[36mprint[m(date_pairs)[2;9Hparams = {}[3;9Hparams[[31m'pg_role'[m] = config[[31m"user"[m][4;9Hparams[[31m'schema'[m] = working_schema[5;9Hexperiment_hashes = [[31m'357e3a5bc7d3d7cfc2c13db8ea428413'[m][6;9Hparams[[31m'experiment_hashes'[m] = experiment_hashes[7;9H[38;5;130mif[m [36misinstance[m(date_pairs[[31m0[m], [36mstr[m):[8;13Hdate_pairs = [date_pairs][9;9Hparams[[31m'date_pairs'[m] = date_pairs[10;9Hparams[[31m'date_list'[m] = date_list[11;9Hparams[[31m'weights'[m] = weights[12;9Hparams[[31m'list_sizes'[m] = [list_size][13;9Hparams[[31m'demo_col'[m] = demo_col[14;9Hparams[[31m'subsample'[m] = [36mFalse[m[15;9Hparams[[31m'bootstrap'[m] = [36mFalse[m[16;9Hparams[[31m'entity_demos'[m]=f[31m'{working_schema}.entity_demos'[m[19;9Hengine=engine_donors[20;9Hra = RecallAdjuster(engine=engine, params=params, pause_phases=pause_phaa[21;1Hses, exhaustive=exhaustive)[23;9H[38;5;130mif[m [38;5;130mnot[m exhaustive:[24;63H469,9[9C87%[6;9H[?25h[?25l[24;53H~@ý[6;9H[24;53H   [6;17H[27m[29m[m[H[2J[2;9H[38;5;130mif[m [38;5;130mnot[m exhaustive:[3;13Hengine_donors.execute(f[31m"""
+                INSERT INTO {results_schema}.model_adjustment_results_{demo_col}}[5;1H 
+                SELECT * FROM {working_schema}.model_adjustment_results_{demo_coo[7;1Hl};
+            """[m)[10;13Hengine_donors.execute(f[31m"""
+                INSERT INTO {results_schema}.model_adjustment_group_k_{demo_col}}[12;1H 
+                SELECT * FROM {working_schema}.model_adjustment_group_k_{demo_coo[14;1Hl} gkp WHERE (gkp.model_group_id, gkp.train_end_time, gkp.demo_value, gkp.group__[15;1Hk) NOT IN (SELECT * FROM {results_schema}.model_adjustment_group_k_{demo_col})
+            """[m)[18;9H[38;5;130melse[m:[19;13H[38;5;130mfor[m al [38;5;130min[m string.ascii_lowercase[:[31m10[m]:[20;17Hengine_donors.execute(f[31m"""
+                    INSERT INTO {results_schema}.exhaustive_{al} 
+                    SELECT * FROM {working_schema}.exhaustive_{al};
+                """[m)[24;63H488,17[8C90%[6;17H[?25h[?25l[24;53H~@ý[6;17H[24;53H   [6;5H[27m[29m[m[H[2J[1;1H[31m                    SELECT * FROM {working_schema}.exhaustive_{al};
+                """[m)[4;9Hengine_donors.execute([31m"COMMIT;"[m)[6;5H[38;5;130mfor[m save_name [38;5;130min[m alternate_save_names:[7;9Hschema = params[[31m'schema'[m][8;9Hdemo_col = params[[31m"demo_col"[m][9;9Hsql = f[31m"DROP TABLE IF EXISTS {results_schema}.{save_name}; CREATE TABLE  [10;1H{results_schema}.{save_name} AS SELECT * FROM {results_schema}.model_adjustment__[11;1Hresults_{demo_col};"[m[12;9Hengine_donors.execute(sql)[13;9Hengine_donors.execute([31m"COMMIT;"[m)
+
+
+[38;5;130mdef[m [36mmulti_weight_ra_procedure[m():
+    w = [31m0.99[m
+    [36mprint[m(f[31m"Procedure with weights: {w}"[m)
+    ra_procedure(weights=[w, [31m1[m-w], alternate_save_names=[[31m"save_res_a"[m])
+    w = [31m0.9[m
+    [36mprint[m(f[31m"Procedure with weights: {w}"[m)
+    ra_procedure(weights=[w, [31m1[m-w], alternate_save_names=[[31m"save_res_b"[m])
+    w = [31m0.8[m[24;63H505,5[9C93%[6;5H[?25h[?25l[24;53H~@ý[6;5H[24;53H   [6;5H[27m[29m[m[H[2J[1;5Hra_procedure(weights=[w, [31m1[m-w], alternate_save_names=[[31m"save_res_b"[m])
+    w = [31m0.8[m
+    [36mprint[m(f[31m"Procedure with weights: {w}"[m)
+    ra_procedure(weights=[w, [31m1[m-w], alternate_save_names=[[31m"save_res_c"[m])
+    w = [31m0.7[m
+    [36mprint[m(f[31m"Procedure with weights: {w}"[m)
+    ra_procedure(weights=[w, [31m1[m-w], alternate_save_names=[[31m"save_res_d"[m])
+    w = [31m0.6[m
+    [36mprint[m(f[31m"Procedure with weights: {w}"[m)
+    ra_procedure(weights=[w, [31m1[m-w], alternate_save_names=[[31m"save_res_e"[m])
+    w = [31m0.5[m
+    [36mprint[m(f[31m"Procedure with weights: {w}"[m)
+    ra_procedure(weights=[w, [31m1[m-w], alternate_save_names=[[31m"save_res_f"[m])
+    w = [31m0.4[m
+    [36mprint[m(f[31m"Procedure with weights: {w}"[m)
+    ra_procedure(weights=[w, [31m1[m-w], alternate_save_names=[[31m"save_res_g"[m])
+    w = [31m0.3[m
+    [36mprint[m(f[31m"Procedure with weights: {w}"[m)
+    ra_procedure(weights=[w, [31m1[m-w], alternate_save_names=[[31m"save_res_h"[m])
+    w = [31m0.2[m
+    [36mprint[m(f[31m"Procedure with weights: {w}"[m)
+    ra_procedure(weights=[w, [31m1[m-w], alternate_save_names=[[31m"save_res_i"[m])
+    w = [31m0.1[m[24;63H524,5[9C97%[6;5H[?25h[?25l[24;53H~@ý[6;5H[24;53H   [6;5H[27m[29m[m[H[2J[1;5Hra_procedure(weights=[w, [31m1[m-w], alternate_save_names=[[31m"save_res_i"[m])
+    w = [31m0.1[m
+    [36mprint[m(f[31m"Procedure with weights: {w}"[m)
+    ra_procedure(weights=[w, [31m1[m-w], alternate_save_names=[[31m"save_res_j"[m])
+    w = [31m0.01[m
+    [36mprint[m(f[31m"Procedure with weights: {w}"[m)
+    ra_procedure(weights=[w, [31m1[m-w], alternate_save_names=[[31m"save_res_k"[m])[11;1H[38;5;130mif[m __name__ == [31m"__main__"[m:
+    multi_weight_ra_procedure()
+
+[94m~                                                                               [15;1H~                                                                               [16;1H~                                                                               [17;1H~                                                                               [18;1H~                                                                               [19;1H~                                                                               [20;1H~                                                                               [21;1H~                                                                               [22;1H~                                                                               [23;1H~                                                                               [m[24;63H545,5[9CBot[6;5H[?25h[?25l[24;53H~@ý[6;5H[24;53H   [6;4H[1;23r[1;1H[7M[1;24r[17;1H[94m~                                                                               [18;1H~                                                                               [19;1H~                                                                               [20;1H~                                                                               [21;1H~                                                                               [22;1H~                                                                               [23;1H~                                                                               [m[24;63H[K[24;63H552,4[9CBot[6;4H[?25h[?25l[24;53H~@ý[6;4H[24;53H   [6;4H[?25h[?25l[?25h[?25l[?25h[?25l[24;53H~@ý[6;4H[24;53H   [6;4H[?25h[?25l[24;53H~@ý[6;4H[24;53H   [6;4H[?25h[?25l[24;53H~@ý[6;4H[24;53H   [6;4H[?25h[?25l[24;53H~@ý[6;4H[24;53H   [6;4H[?25h[?25l[24;53H~@ý[6;4H[24;53H   [6;4H[?25h[?25l[24;53H~@ý[6;4H[24;53H   [6;4H[?25h[?25l[24;53H~@ý[6;4H[24;53H   [6;4H[?25h[?25l[24;53H~@ý[6;4H[24;53H   [6;4H[?25h[?25l[24;53H~@ý[6;4H[24;53H   [6;4H[?25h[?25l[24;53H~@ý[6;4H[24;53H   [6;4H[?25h[?25l[24;53H~@ý[6;4H[24;53H   [6;4H[?25h[?25l[24;53H~@ý[6;4H[24;53H   [6;4H[?25h[?25l[24;53H~@ý[6;4H[24;53H   [6;4H[?25h[?25l[24;53H~@k[6;4H[24;53H   [6;4H[?25h[?25l[24;53H~@k[6;4H[24;53H   [6;4H[?25h[?25l[24;53H~@k[6;4H[24;53H   [6;4H[?25h[?25l[24;53H~@k[6;4H[24;53H   [6;4H[?25h[?25l[24;53H^[[6;4H[24;53H  [6;4H[24;53H^[[6;4H[24;53H  [6;4H[?25h[?25l[24;53H:[6;4H[24;53H[K[24;1H:[?2004h[?25hw[?25l[?25hq[?25l[?25h[?25l[?2004l"DJRecallAdjuster.py" 552L, 23932C written
+[?2004l[?1l>[?25h[?1049l[23;0;0t[01;32mdhananja@ip-10-0-1-114[00m:[01;34m~/peeps-chili/nature_machine_intelligence_2021/housing_saffety[00m$ python DJ*
+Procedure with weights: 0.99
+[('2014-06-01', '2014-06-01'), ('2014-06-01', '2014-09-01')]
+[('2014-09-01', '2014-09-01'), ('2014-09-01', '2014-12-01')]
+[('2014-12-01', '2014-12-01'), ('2014-12-01', '2015-03-01')]
+[('2015-03-01', '2015-03-01'), ('2015-03-01', '2015-06-01')]
+[('2015-06-01', '2015-06-01'), ('2015-06-01', '2015-09-01')]
+[('2015-09-01', '2015-09-01'), ('2015-09-01', '2015-12-01')]
+[('2015-12-01', '2015-12-01'), ('2015-12-01', '2016-03-01')]
+[('2016-03-01', '2016-03-01'), ('2016-03-01', '2016-04-01')]
+Procedure with weights: 0.9
+[('2014-06-01', '2014-06-01'), ('2014-06-01', '2014-09-01')]
+[('2014-09-01', '2014-09-01'), ('2014-09-01', '2014-12-01')]
+[('2014-12-01', '2014-12-01'), ('2014-12-01', '2015-03-01')]
+[('2015-03-01', '2015-03-01'), ('2015-03-01', '2015-06-01')]
+[('2015-06-01', '2015-06-01'), ('2015-06-01', '2015-09-01')]
+[('2015-09-01', '2015-09-01'), ('2015-09-01', '2015-12-01')]
+[('2015-12-01', '2015-12-01'), ('2015-12-01', '2016-03-01')]
+[('2016-03-01', '2016-03-01'), ('2016-03-01', '2016-04-01')]
+Procedure with weights: 0.8
+[('2014-06-01', '2014-06-01'), ('2014-06-01', '2014-09-01')]
+[('2014-09-01', '2014-09-01'), ('2014-09-01', '2014-12-01')]
+[('2014-12-01', '2014-12-01'), ('2014-12-01', '2015-03-01')]
+[('2015-03-01', '2015-03-01'), ('2015-03-01', '2015-06-01')]
+[('2015-06-01', '2015-06-01'), ('2015-06-01', '2015-09-01')]
+[('2015-09-01', '2015-09-01'), ('2015-09-01', '2015-12-01')]
+[('2015-12-01', '2015-12-01'), ('2015-12-01', '2016-03-01')]
+[('2016-03-01', '2016-03-01'), ('2016-03-01', '2016-04-01')]
+Procedure with weights: 0.7
+[('2014-06-01', '2014-06-01'), ('2014-06-01', '2014-09-01')]
+[('2014-09-01', '2014-09-01'), ('2014-09-01', '2014-12-01')]
+[('2014-12-01', '2014-12-01'), ('2014-12-01', '2015-03-01')]
+[('2015-03-01', '2015-03-01'), ('2015-03-01', '2015-06-01')]
+[('2015-06-01', '2015-06-01'), ('2015-06-01', '2015-09-01')]
+[('2015-09-01', '2015-09-01'), ('2015-09-01', '2015-12-01')]
+[('2015-12-01', '2015-12-01'), ('2015-12-01', '2016-03-01')]
+[('2016-03-01', '2016-03-01'), ('2016-03-01', '2016-04-01')]
+Procedure with weights: 0.6
+[('2014-06-01', '2014-06-01'), ('2014-06-01', '2014-09-01')]
+[('2014-09-01', '2014-09-01'), ('2014-09-01', '2014-12-01')]
+[('2014-12-01', '2014-12-01'), ('2014-12-01', '2015-03-01')]
+[('2015-03-01', '2015-03-01'), ('2015-03-01', '2015-06-01')]
+[('2015-06-01', '2015-06-01'), ('2015-06-01', '2015-09-01')]
+[('2015-09-01', '2015-09-01'), ('2015-09-01', '2015-12-01')]
+[('2015-12-01', '2015-12-01'), ('2015-12-01', '2016-03-01')]
+[('2016-03-01', '2016-03-01'), ('2016-03-01', '2016-04-01')]
+Procedure with weights: 0.5
+[('2014-06-01', '2014-06-01'), ('2014-06-01', '2014-09-01')]
+[('2014-09-01', '2014-09-01'), ('2014-09-01', '2014-12-01')]
+[('2014-12-01', '2014-12-01'), ('2014-12-01', '2015-03-01')]
+[('2015-03-01', '2015-03-01'), ('2015-03-01', '2015-06-01')]
+[('2015-06-01', '2015-06-01'), ('2015-06-01', '2015-09-01')]
+[('2015-09-01', '2015-09-01'), ('2015-09-01', '2015-12-01')]
+[('2015-12-01', '2015-12-01'), ('2015-12-01', '2016-03-01')]
+[('2016-03-01', '2016-03-01'), ('2016-03-01', '2016-04-01')]
+Procedure with weights: 0.4
+[('2014-06-01', '2014-06-01'), ('2014-06-01', '2014-09-01')]
+[('2014-09-01', '2014-09-01'), ('2014-09-01', '2014-12-01')]
+[('2014-12-01', '2014-12-01'), ('2014-12-01', '2015-03-01')]
+[('2015-03-01', '2015-03-01'), ('2015-03-01', '2015-06-01')]
+[('2015-06-01', '2015-06-01'), ('2015-06-01', '2015-09-01')]
+[('2015-09-01', '2015-09-01'), ('2015-09-01', '2015-12-01')]
+[('2015-12-01', '2015-12-01'), ('2015-12-01', '2016-03-01')]
+[('2016-03-01', '2016-03-01'), ('2016-03-01', '2016-04-01')]
+Procedure with weights: 0.3
+[('2014-06-01', '2014-06-01'), ('2014-06-01', '2014-09-01')]
+[('2014-09-01', '2014-09-01'), ('2014-09-01', '2014-12-01')]
+[('2014-12-01', '2014-12-01'), ('2014-12-01', '2015-03-01')]
+[('2015-03-01', '2015-03-01'), ('2015-03-01', '2015-06-01')]
+[('2015-06-01', '2015-06-01'), ('2015-06-01', '2015-09-01')]
+[('2015-09-01', '2015-09-01'), ('2015-09-01', '2015-12-01')]
+[('2015-12-01', '2015-12-01'), ('2015-12-01', '2016-03-01')]
+[('2016-03-01', '2016-03-01'), ('2016-03-01', '2016-04-01')]
+Procedure with weights: 0.2
+[('2014-06-01', '2014-06-01'), ('2014-06-01', '2014-09-01')]
+[('2014-09-01', '2014-09-01'), ('2014-09-01', '2014-12-01')]
+[('2014-12-01', '2014-12-01'), ('2014-12-01', '2015-03-01')]
+[('2015-03-01', '2015-03-01'), ('2015-03-01', '2015-06-01')]
+[('2015-06-01', '2015-06-01'), ('2015-06-01', '2015-09-01')]
+[('2015-09-01', '2015-09-01'), ('2015-09-01', '2015-12-01')]
+[('2015-12-01', '2015-12-01'), ('2015-12-01', '2016-03-01')]
+[('2016-03-01', '2016-03-01'), ('2016-03-01', '2016-04-01')]
+Procedure with weights: 0.1
+[('2014-06-01', '2014-06-01'), ('2014-06-01', '2014-09-01')]
+[('2014-09-01', '2014-09-01'), ('2014-09-01', '2014-12-01')]
+[('2014-12-01', '2014-12-01'), ('2014-12-01', '2015-03-01')]
+[('2015-03-01', '2015-03-01'), ('2015-03-01', '2015-06-01')]
+[('2015-06-01', '2015-06-01'), ('2015-06-01', '2015-09-01')]
+[('2015-09-01', '2015-09-01'), ('2015-09-01', '2015-12-01')]
+[('2015-12-01', '2015-12-01'), ('2015-12-01', '2016-03-01')]
+[('2016-03-01', '2016-03-01'), ('2016-03-01', '2016-04-01')]
+Procedure with weights: 0.01
+[('2014-06-01', '2014-06-01'), ('2014-06-01', '2014-09-01')]
+[('2014-09-01', '2014-09-01'), ('2014-09-01', '2014-12-01')]
+[('2014-12-01', '2014-12-01'), ('2014-12-01', '2015-03-01')]
+[('2015-03-01', '2015-03-01'), ('2015-03-01', '2015-06-01')]
+[('2015-06-01', '2015-06-01'), ('2015-06-01', '2015-09-01')]
+[('2015-09-01', '2015-09-01'), ('2015-09-01', '2015-12-01')]
+[('2015-12-01', '2015-12-01'), ('2015-12-01', '2016-03-01')]
+[('2016-03-01', '2016-03-01'), ('2016-03-01', '2016-04-01')]
+[01;32mdhananja@ip-10-0-1-114[00m:[01;34m~/peeps-chili/nature_machine_intelligence_2021/housing_saffety[00m$ [01;32mdhananja@ip-10-0-1-114[00m:[01;34m~/peeps-chili/nature_machine_intelligence_2021/housing_saffety[00m$ pty[K[Kython DJ*
+[('2014-06-01', '2014-06-01'), ('2014-06-01', '2014-09-01')]
+[('2014-09-01', '2014-09-01'), ('2014-09-01', '2014-12-01')]
+[('2014-12-01', '2014-12-01'), ('2014-12-01', '2015-03-01')]
+[('2015-03-01', '2015-03-01'), ('2015-03-01', '2015-06-01')]
+[('2015-06-01', '2015-06-01'), ('2015-06-01', '2015-09-01')]
+[('2015-09-01', '2015-09-01'), ('2015-09-01', '2015-12-01')]
+[('2015-12-01', '2015-12-01'), ('2015-12-01', '2016-03-01')]
+[('2016-03-01', '2016-03-01'), ('2016-03-01', '2016-04-01')]
+[01;32mdhananja@ip-10-0-1-114[00m:[01;34m~/peeps-chili/nature_machine_intelligence_2021/housing_saffety[00m$ [01;32mdhananja@ip-10-0-1-114[00m:[01;34m~/peeps-chili/nature_machine_intelligence_2021/housing_sa[Kffety[00m$ python DJ*
+0.99
+[('2014-06-01', '2014-06-01'), ('2014-06-01', '2014-09-01')]
+[('2014-09-01', '2014-09-01'), ('2014-09-01', '2014-12-01')]
+[('2014-12-01', '2014-12-01'), ('2014-12-01', '2015-03-01')]
+[('2015-03-01', '2015-03-01'), ('2015-03-01', '2015-06-01')]
+[('2015-06-01', '2015-06-01'), ('2015-06-01', '2015-09-01')]
+[('2015-09-01', '2015-09-01'), ('2015-09-01', '2015-12-01')]
+[('2015-12-01', '2015-12-01'), ('2015-12-01', '2016-03-01')]
+[('2016-03-01', '2016-03-01'), ('2016-03-01', '2016-04-01')]
+Traceback (most recent call last):
+  File "DJRecallAdjuster.py", line 542, in <module>
+    ra_procedure(entity_selection=True)
+  File "DJRecallAdjuster.py", line 475, in ra_procedure
+    date_pairs = [ date_pairs_all[2*dp_idx], date_pairs_all[2*dp_idx+1] ]
+IndexError: list index out of range
+[01;32mdhananja@ip-10-0-1-114[00m:[01;34m~/peeps-chili/nature_machine_intelligence_2021/housing_saffety[00m$ [K[A[01;32mdhananja@ip-10-0-1-114[00m:[01;34m~/peeps-chili/nature_machine_intelligence_2021/housing_saffety[00m$ [K[A[01;32mdhananja@ip-10-0-1-114[00m:[01;34m~/peeps-chili/nature_machine_intelligence_2021/housing_saffety[00m$ [K[A[01;32mdhananja@ip-10-0-1-114[00m:[01;34m~/peeps-chili/nature_machine_intelligence_2021/housing_saffety[00m$ [K[A[01;32mdhananja@ip-10-0-1-114[00m:[01;34m~/peeps-chili/nature_machine_intelligence_2021/housing_saffety[00m$ [K[A[01;32mdhananja@ip-10-0-1-114[00m:[01;34m~/peeps-chili/nature_machine_intelligence_2021/housing_saffety[00m$ [K[A[01;32mdhananja@ip-10-0-1-114[00m:[01;34m~/peeps-chili/nature_machine_intelligence_2021/housing_saffety[00m$ [K[A[01;32mdhananja@ip-10-0-1-114[00m:[01;34m~/peeps-chili/nature_machine_intelligence_2021/housing_saffety[00m$ [K[A[01;32mdhananja@ip-10-0-1-114[00m:[01;34m~/peeps-chili/nature_machine_intelligence_2021/housing_saffety[00m$ [K[A[01;32mdhananja@ip-10-0-1-114[00m:[01;34m~/peeps-chili/nature_machine_intelligence_2021/housing_saffety[00m$ [K[A[01;32mdhananja@ip-10-0-1-114[00m:[01;34m~/peeps-chili/nature_machine_intelligence_2021/housing_saffety[00m$ [K[A[01;32mdhananja@ip-10-0-1-114[00m:[01;34m~/peeps-chili/nature_machine_intelligence_2021/housing_saffety[00m$ [K[A[01;32mdhananja@ip-10-0-1-114[00m:[01;34m~/peeps-chili/nature_machine_intelligence_2021/housing_saffety[00m$ [K[A[01;32mdhananja@ip-10-0-1-114[00m:[01;34m~/peeps-chili/nature_machine_intelligence_2021/housing_saffety[00m$ [K[A[01;32mdhananja@ip-10-0-1-114[00m:[01;34m~/peeps-chili/nature_machine_intelligence_2021/housing_saffety[00m$ [K[A[01;32mdhananja@ip-10-0-1-114[00m:[01;34m~/peeps-chili/nature_machine_intelligence_2021/housing_saffety[00m$ [K[A[01;32mdhananja@ip-10-0-1-114[00m:[01;34m~/peeps-chili/nature_machine_intelligence_2021/housing_saffety[00m$ [K[A[01;32mdhananja@ip-10-0-1-114[00m:[01;34m~/peeps-chili/nature_machine_intelligence_2021/housing_saffety[00m$ [K[A[01;32mdhananja@ip-10-0-1-114[00m:[01;34m~/peeps-chili/nature_machine_intelligence_2021/housing_saffety[00m$ [K[A[01;32mdhananja@ip-10-0-1-114[00m:[01;34m~/peeps-chili/nature_machine_intelligence_2021/housing_saffety[00m$ [K[A[01;32mdhananja@ip-10-0-1-114[00m:[01;34m~/peeps-chili/nature_machine_intelligence_2021/housing_saffety[00m$ [K[A[01;32mdhananja@ip-10-0-1-114[00m:[01;34m~/peeps-chili/nature_machine_intelligence_2021/housing_saffety[00m$ [K[A[01;32mdhananja@ip-10-0-1-114[00m:[01;34m~/peeps-chili/nature_machine_intelligence_2021/housing_saffety[00m$ [01;32mdhananja@ip-10-0-1-114[00m:[01;34m~/peeps-chili/nature_machine_intelligence_2021/housing_sa[Kffety[00m$ python DJ*
+0.99
+[('2014-06-01', '2014-06-01'), ('2014-06-01', '2014-09-01')]
+[('2014-09-01', '2014-09-01'), ('2014-09-01', '2014-12-01')]
+[('2014-12-01', '2014-12-01'), ('2014-12-01', '2015-03-01')]
+[('2015-03-01', '2015-03-01'), ('2015-03-01', '2015-06-01')]
+[('2015-06-01', '2015-06-01'), ('2015-06-01', '2015-09-01')]
+[('2015-09-01', '2015-09-01'), ('2015-09-01', '2015-12-01')]
+[('2015-12-01', '2015-12-01'), ('2015-12-01', '2016-03-01')]
+[('2016-03-01', '2016-03-01'), ('2016-03-01', '2016-04-01')]
+Traceback (most recent call last):
+  File "DJRecallAdjuster.py", line 542, in <module>
+    ra_procedure(entity_selection=True)
+  File "DJRecallAdjuster.py", line 475, in ra_procedure
+    date_pairs = [ date_pairs_all[2*dp_idx], date_pairs_all[2*dp_idx+1] ]
+IndexError: list index out of range
+[01;32mdhananja@ip-10-0-1-114[00m:[01;34m~/peeps-chili/nature_machine_intelligence_2021/housing_saffety[00m$ python DJ*
+0.99
+[('2014-06-01', '2014-06-01'), ('2014-06-01', '2014-09-01')]
+[('2014-09-01', '2014-09-01'), ('2014-09-01', '2014-12-01')]
+[('2014-12-01', '2014-12-01'), ('2014-12-01', '2015-03-01')]
+[('2015-03-01', '2015-03-01'), ('2015-03-01', '2015-06-01')]
+[('2015-06-01', '2015-06-01'), ('2015-06-01', '2015-09-01')]
+[('2015-09-01', '2015-09-01'), ('2015-09-01', '2015-12-01')]
+[('2015-12-01', '2015-12-01'), ('2015-12-01', '2016-03-01')]
+[('2016-03-01', '2016-03-01'), ('2016-03-01', '2016-04-01')]
+0.9
+[('2014-06-01', '2014-06-01'), ('2014-06-01', '2014-09-01')]
+[('2014-09-01', '2014-09-01'), ('2014-09-01', '2014-12-01')]
+[('2014-12-01', '2014-12-01'), ('2014-12-01', '2015-03-01')]
+[('2015-03-01', '2015-03-01'), ('2015-03-01', '2015-06-01')]
+[('2015-06-01', '2015-06-01'), ('2015-06-01', '2015-09-01')]
+[('2015-09-01', '2015-09-01'), ('2015-09-01', '2015-12-01')]
+[('2015-12-01', '2015-12-01'), ('2015-12-01', '2016-03-01')]
+[('2016-03-01', '2016-03-01'), ('2016-03-01', '2016-04-01')]
+0.8
+[('2014-06-01', '2014-06-01'), ('2014-06-01', '2014-09-01')]
+[('2014-09-01', '2014-09-01'), ('2014-09-01', '2014-12-01')]
+[('2014-12-01', '2014-12-01'), ('2014-12-01', '2015-03-01')]
+[('2015-03-01', '2015-03-01'), ('2015-03-01', '2015-06-01')]
+[('2015-06-01', '2015-06-01'), ('2015-06-01', '2015-09-01')]
+[('2015-09-01', '2015-09-01'), ('2015-09-01', '2015-12-01')]
+[('2015-12-01', '2015-12-01'), ('2015-12-01', '2016-03-01')]
+[('2016-03-01', '2016-03-01'), ('2016-03-01', '2016-04-01')]
+0.7
+[('2014-06-01', '2014-06-01'), ('2014-06-01', '2014-09-01')]
+[('2014-09-01', '2014-09-01'), ('2014-09-01', '2014-12-01')]
+[('2014-12-01', '2014-12-01'), ('2014-12-01', '2015-03-01')]
+[('2015-03-01', '2015-03-01'), ('2015-03-01', '2015-06-01')]
+[('2015-06-01', '2015-06-01'), ('2015-06-01', '2015-09-01')]
+[('2015-09-01', '2015-09-01'), ('2015-09-01', '2015-12-01')]
+[('2015-12-01', '2015-12-01'), ('2015-12-01', '2016-03-01')]
+[('2016-03-01', '2016-03-01'), ('2016-03-01', '2016-04-01')]
+0.6
+[('2014-06-01', '2014-06-01'), ('2014-06-01', '2014-09-01')]
+[('2014-09-01', '2014-09-01'), ('2014-09-01', '2014-12-01')]
+[('2014-12-01', '2014-12-01'), ('2014-12-01', '2015-03-01')]
+[('2015-03-01', '2015-03-01'), ('2015-03-01', '2015-06-01')]
+[('2015-06-01', '2015-06-01'), ('2015-06-01', '2015-09-01')]
+[('2015-09-01', '2015-09-01'), ('2015-09-01', '2015-12-01')]
+[('2015-12-01', '2015-12-01'), ('2015-12-01', '2016-03-01')]
+[('2016-03-01', '2016-03-01'), ('2016-03-01', '2016-04-01')]
+0.5
+[('2014-06-01', '2014-06-01'), ('2014-06-01', '2014-09-01')]
+[('2014-09-01', '2014-09-01'), ('2014-09-01', '2014-12-01')]
+[('2014-12-01', '2014-12-01'), ('2014-12-01', '2015-03-01')]
+[('2015-03-01', '2015-03-01'), ('2015-03-01', '2015-06-01')]
+[('2015-06-01', '2015-06-01'), ('2015-06-01', '2015-09-01')]
+[('2015-09-01', '2015-09-01'), ('2015-09-01', '2015-12-01')]
+[('2015-12-01', '2015-12-01'), ('2015-12-01', '2016-03-01')]
+[('2016-03-01', '2016-03-01'), ('2016-03-01', '2016-04-01')]
+0.4
+[('2014-06-01', '2014-06-01'), ('2014-06-01', '2014-09-01')]
+[('2014-09-01', '2014-09-01'), ('2014-09-01', '2014-12-01')]
+[('2014-12-01', '2014-12-01'), ('2014-12-01', '2015-03-01')]
+[('2015-03-01', '2015-03-01'), ('2015-03-01', '2015-06-01')]
+[('2015-06-01', '2015-06-01'), ('2015-06-01', '2015-09-01')]
+[('2015-09-01', '2015-09-01'), ('2015-09-01', '2015-12-01')]
+[('2015-12-01', '2015-12-01'), ('2015-12-01', '2016-03-01')]
+[('2016-03-01', '2016-03-01'), ('2016-03-01', '2016-04-01')]
+0.3
+[('2014-06-01', '2014-06-01'), ('2014-06-01', '2014-09-01')]
+[('2014-09-01', '2014-09-01'), ('2014-09-01', '2014-12-01')]
+[('2014-12-01', '2014-12-01'), ('2014-12-01', '2015-03-01')]
+[('2015-03-01', '2015-03-01'), ('2015-03-01', '2015-06-01')]
+[('2015-06-01', '2015-06-01'), ('2015-06-01', '2015-09-01')]
+[('2015-09-01', '2015-09-01'), ('2015-09-01', '2015-12-01')]
+[('2015-12-01', '2015-12-01'), ('2015-12-01', '2016-03-01')]
+[('2016-03-01', '2016-03-01'), ('2016-03-01', '2016-04-01')]
+0.2
+[('2014-06-01', '2014-06-01'), ('2014-06-01', '2014-09-01')]
+[('2014-09-01', '2014-09-01'), ('2014-09-01', '2014-12-01')]
+[('2014-12-01', '2014-12-01'), ('2014-12-01', '2015-03-01')]
+[('2015-03-01', '2015-03-01'), ('2015-03-01', '2015-06-01')]
+[('2015-06-01', '2015-06-01'), ('2015-06-01', '2015-09-01')]
+[('2015-09-01', '2015-09-01'), ('2015-09-01', '2015-12-01')]
+[('2015-12-01', '2015-12-01'), ('2015-12-01', '2016-03-01')]
+[('2016-03-01', '2016-03-01'), ('2016-03-01', '2016-04-01')]
+0.1
+[('2014-06-01', '2014-06-01'), ('2014-06-01', '2014-09-01')]
+[('2014-09-01', '2014-09-01'), ('2014-09-01', '2014-12-01')]
+[('2014-12-01', '2014-12-01'), ('2014-12-01', '2015-03-01')]
+[('2015-03-01', '2015-03-01'), ('2015-03-01', '2015-06-01')]
+[('2015-06-01', '2015-06-01'), ('2015-06-01', '2015-09-01')]
+[('2015-09-01', '2015-09-01'), ('2015-09-01', '2015-12-01')]
+[('2015-12-01', '2015-12-01'), ('2015-12-01', '2016-03-01')]
+[('2016-03-01', '2016-03-01'), ('2016-03-01', '2016-04-01')]
+0.01
+[('2014-06-01', '2014-06-01'), ('2014-06-01', '2014-09-01')]
+[('2014-09-01', '2014-09-01'), ('2014-09-01', '2014-12-01')]
+[('2014-12-01', '2014-12-01'), ('2014-12-01', '2015-03-01')]
+[('2015-03-01', '2015-03-01'), ('2015-03-01', '2015-06-01')]
+[('2015-06-01', '2015-06-01'), ('2015-06-01', '2015-09-01')]
+[('2015-09-01', '2015-09-01'), ('2015-09-01', '2015-12-01')]
+[('2015-12-01', '2015-12-01'), ('2015-12-01', '2016-03-01')]
+[('2016-03-01', '2016-03-01'), ('2016-03-01', '2016-04-01')]
+[01;32mdhananja@ip-10-0-1-114[00m:[01;34m~/peeps-chili/nature_machine_intelligence_2021/housing_saffety[00m$ [01;32mdhananja@ip-10-0-1-114[00m:[01;34m~/peeps-chili/nature_machine_intelligence_2021/housing_sa[Kffety[00m$ python DJ*
+[('2014-06-01', '2014-06-01'), ('2014-06-01', '2014-09-01')]
+[('2014-09-01', '2014-09-01'), ('2014-09-01', '2014-12-01')]
+[('2014-12-01', '2014-12-01'), ('2014-12-01', '2015-03-01')]
+[('2015-03-01', '2015-03-01'), ('2015-03-01', '2015-06-01')]
+[('2015-06-01', '2015-06-01'), ('2015-06-01', '2015-09-01')]
+[('2015-09-01', '2015-09-01'), ('2015-09-01', '2015-12-01')]
+[('2015-12-01', '2015-12-01'), ('2015-12-01', '2016-03-01')]
+[('2016-03-01', '2016-03-01'), ('2016-03-01', '2016-04-01')]
+[01;32mdhananja@ip-10-0-1-114[00m:[01;34m~/peeps-chili/nature_machine_intelligence_2021/housing_saffety[00m$ python DJ*[C[C[C[C[C[C[K

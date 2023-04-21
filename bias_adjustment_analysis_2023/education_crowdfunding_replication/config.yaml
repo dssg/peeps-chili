@@ -1,0 +1,10 @@
+database: dhananja_donors
+working_schema: bias_working
+results_schema: bias_results
+demo_col: plevel
+demo_values: ["not_highest", "highest"]
+list_size: 1000
+date_list: ['2011-03-01', '2011-05-01', '2011-07-01', '2011-09-01', '2011-11-01', '2012-01-01', '2012-03-01', '2012-05-01', '2012-07-01', '2012-09-01', '2012-11-01', '2013-01-01']
+min_separations: 2
+experiment_hashes: ['a33cbdb3208b0df5f4286237a6dbcf8f']
+single_model: 942
